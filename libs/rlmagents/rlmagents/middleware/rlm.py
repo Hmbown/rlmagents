@@ -1,9 +1,8 @@
-"""RLMMiddleware -- brings Aleph's RLM capabilities into DeepAgents' middleware stack."""
+"""RLMMiddleware -- RLM context isolation for the agent middleware stack."""
 
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Sequence
-from typing import Any
 
 from langchain.agents.middleware.types import (
     AgentMiddleware,
@@ -11,51 +10,71 @@ from langchain.agents.middleware.types import (
     ModelResponse,
 )
 from langchain.tools.tool_node import ToolCallRequest
-from langchain_core.messages import ToolMessage
+from langchain_core.messages import SystemMessage, ToolMessage
 from langchain_core.tools import BaseTool
 from langgraph.types import Command
-
-from aleph.repl.sandbox import SandboxConfig
 
 from rlmagents.middleware._prompt import load_rlm_prompt
 from rlmagents.middleware._state import RLMState
 from rlmagents.middleware._tools import _build_rlm_tools
+from rlmagents.repl.sandbox import SandboxConfig
 from rlmagents.session_manager import RLMSessionManager
 
-try:
-    from deepagents.middleware._utils import append_to_system_message
-except ImportError:  # pragma: no cover
-    # Fallback if deepagents isn't installed in the current env
-    from langchain_core.messages import SystemMessage
 
-    def append_to_system_message(  # type: ignore[misc]
-        system_message: SystemMessage | None, text: str,
-    ) -> SystemMessage:
-        new_content: list[str | dict[str, str]] = (
-            list(system_message.content_blocks) if system_message else []
-        )
-        if new_content:
-            text = f"\n\n{text}"
-        new_content.append({"type": "text", "text": text})
-        return SystemMessage(content=new_content)
+def _append_to_system_message(
+    system_message: SystemMessage | None,
+    text: str,
+) -> SystemMessage:
+    """Append text to a system message, creating one if needed."""
+    new_content: list[str | dict[str, str]] = (
+        list(system_message.content_blocks) if system_message else []
+    )
+    if new_content:
+        text = f"\n\n{text}"
+    new_content.append({"type": "text", "text": text})
+    return SystemMessage(content=new_content)
 
 
 # Tools that should NOT trigger auto-load interception
-_RLM_TOOL_NAMES = frozenset({
-    "load_context", "list_contexts", "diff_contexts", "save_session", "load_session",
-    "peek_context", "search_context", "semantic_search", "exec_python", "get_variable",
-    "think", "evaluate_progress", "summarize_so_far", "get_evidence", "finalize",
-    "get_status", "rlm_tasks",
-    "validate_recipe", "estimate_recipe", "run_recipe", "run_recipe_code",
-    "configure_rlm",
-})
+_RLM_TOOL_NAMES = frozenset(
+    {
+        "load_context",
+        "list_contexts",
+        "diff_contexts",
+        "save_session",
+        "load_session",
+        "peek_context",
+        "search_context",
+        "semantic_search",
+        "cross_context_search",
+        "exec_python",
+        "get_variable",
+        "think",
+        "evaluate_progress",
+        "summarize_so_far",
+        "get_evidence",
+        "finalize",
+        "get_status",
+        "rlm_tasks",
+        "validate_recipe",
+        "estimate_recipe",
+        "run_recipe",
+        "run_recipe_code",
+        "configure_rlm",
+    }
+)
 
 
 class RLMMiddleware(AgentMiddleware):
-    """Middleware that adds Aleph's RLM context isolation to DeepAgents.
+    """Middleware that adds RLM context isolation to the agent stack.
 
-    Provides 22 tools for context loading, search, Python execution,
+    Provides 23 tools for context loading, search, Python execution,
     evidence tracking, reasoning workflow, and recipe pipelines.
+
+    When ``sub_query_model`` is provided, the ``sub_query()`` /
+    ``llm_query()`` function inside ``exec_python`` will invoke that
+    model — enabling the core recursive mechanism from Algorithm 1
+    of the RLM paper.
     """
 
     state_schema = RLMState
@@ -67,10 +86,14 @@ class RLMMiddleware(AgentMiddleware):
         context_policy: str = "trusted",
         auto_load_threshold: int = 10_000,
         system_prompt: str | None = None,
+        sub_query_model: object | None = None,
+        sub_query_timeout: float = 120.0,
     ) -> None:
         self._manager = RLMSessionManager(
             sandbox_config=SandboxConfig(timeout_seconds=sandbox_timeout),
             context_policy=context_policy,
+            sub_query_model=sub_query_model,  # type: ignore[arg-type]
+            sub_query_timeout=sub_query_timeout,
         )
         self._auto_load_threshold = auto_load_threshold
         self._custom_prompt = system_prompt
@@ -95,7 +118,7 @@ class RLMMiddleware(AgentMiddleware):
     ) -> ModelResponse:
         prompt = self._get_prompt()
         if prompt:
-            new_system_message = append_to_system_message(request.system_message, prompt)
+            new_system_message = _append_to_system_message(request.system_message, prompt)
             request = request.override(system_message=new_system_message)
         return handler(request)
 
@@ -106,13 +129,15 @@ class RLMMiddleware(AgentMiddleware):
     ) -> ModelResponse:
         prompt = self._get_prompt()
         if prompt:
-            new_system_message = append_to_system_message(request.system_message, prompt)
+            new_system_message = _append_to_system_message(request.system_message, prompt)
             request = request.override(system_message=new_system_message)
         return await handler(request)
 
     # -- Auto-load large tool results into RLM context ----------------------
 
-    def _maybe_auto_load(self, result: ToolMessage | Command, tool_name: str) -> ToolMessage | Command:
+    def _maybe_auto_load(
+        self, result: ToolMessage | Command, tool_name: str
+    ) -> ToolMessage | Command:
         """If a tool result is large, auto-load it into an RLM context."""
         if self._auto_load_threshold <= 0:
             return result

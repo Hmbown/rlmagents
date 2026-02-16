@@ -7,10 +7,10 @@ from rlmagents.session_manager import RLMSessionManager
 
 
 class TestToolBuilding:
-    def test_build_all_22_tools(self):
+    def test_build_all_23_tools(self):
         mgr = RLMSessionManager()
         tools = _build_rlm_tools(mgr)
-        assert len(tools) == 22
+        assert len(tools) == 23
 
     def test_tool_names_unique(self):
         mgr = RLMSessionManager()
@@ -23,14 +23,28 @@ class TestToolBuilding:
         tools = _build_rlm_tools(mgr)
         names = {t.name for t in tools}
         expected = {
-            "load_context", "list_contexts", "diff_contexts",
-            "save_session", "load_session",
-            "peek_context", "search_context", "semantic_search",
-            "exec_python", "get_variable",
-            "think", "evaluate_progress", "summarize_so_far",
-            "get_evidence", "finalize",
-            "get_status", "rlm_tasks",
-            "validate_recipe", "estimate_recipe", "run_recipe", "run_recipe_code",
+            "load_context",
+            "list_contexts",
+            "diff_contexts",
+            "save_session",
+            "load_session",
+            "peek_context",
+            "search_context",
+            "semantic_search",
+            "cross_context_search",
+            "exec_python",
+            "get_variable",
+            "think",
+            "evaluate_progress",
+            "summarize_so_far",
+            "get_evidence",
+            "finalize",
+            "get_status",
+            "rlm_tasks",
+            "validate_recipe",
+            "estimate_recipe",
+            "run_recipe",
+            "run_recipe_code",
             "configure_rlm",
         }
         assert names == expected
@@ -174,11 +188,13 @@ class TestFinalizeTool:
         mgr = RLMSessionManager()
         mgr.create_session("data", context_id="f")
         tool = self._get_tool(mgr)
-        result = tool.invoke({
-            "answer": "The answer is 42",
-            "confidence": "high",
-            "context_id": "f",
-        })
+        result = tool.invoke(
+            {
+                "answer": "The answer is 42",
+                "confidence": "high",
+                "context_id": "f",
+            }
+        )
         assert "42" in result
         assert "high" in result.lower()
 
@@ -218,9 +234,9 @@ class TestTasksTool:
         mgr.create_session("data", context_id="t")
         tool = self._get_tool(mgr)
         tool.invoke({"action": "add", "context_id": "t", "description": "Task 1"})
-        result = tool.invoke({
-            "action": "update", "context_id": "t", "task_id": "1", "status": "done"
-        })
+        result = tool.invoke(
+            {"action": "update", "context_id": "t", "task_id": "1", "status": "done"}
+        )
         assert "done" in result
 
     def test_clear_tasks(self):

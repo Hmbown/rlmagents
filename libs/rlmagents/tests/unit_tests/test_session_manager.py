@@ -6,11 +6,8 @@ import json
 import tempfile
 from pathlib import Path
 
-import pytest
-
 from rlmagents.session_manager import RLMSessionManager, _detect_format
-
-from aleph.types import ContentFormat
+from rlmagents.types import ContentFormat
 
 
 class TestDetectFormat:

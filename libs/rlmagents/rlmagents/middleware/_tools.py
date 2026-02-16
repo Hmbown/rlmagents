@@ -1,7 +1,7 @@
 """LangChain tool factories for RLM middleware.
 
-22 tools built via StructuredTool.from_function(), each delegating to
-RLMSessionManager.  Follows the pattern from filesystem.py.
+23 tools built via StructuredTool.from_function(), each delegating to
+RLMSessionManager.
 """
 
 from __future__ import annotations
@@ -13,9 +13,8 @@ from typing import Annotated, Any
 
 from langchain_core.tools import BaseTool, StructuredTool
 
-from aleph.mcp.session import _Evidence
-
 from rlmagents.session_manager import RLMSessionManager
+from rlmagents.types import Evidence
 
 
 def _build_rlm_tools(manager: RLMSessionManager) -> list[BaseTool]:
@@ -57,6 +56,7 @@ def _build_rlm_tools(manager: RLMSessionManager) -> list[BaseTool]:
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _fmt_meta(meta: Any) -> str:
     """Format ContextMetadata to a readable string."""
     return (
@@ -73,9 +73,83 @@ def _truncate(text: str, max_chars: int = 50_000) -> str:
     return text[:max_chars] + f"\n... [truncated at {max_chars:,} chars]"
 
 
+def _format_pressure_status(status: dict[str, object]) -> str:
+    """Format compacted-state metadata into a short status snippet."""
+    if not status:
+        return "not initialized"
+    if not status.get("compacted"):
+        return "not compacted"
+    reason = status.get("last_compaction_reason")
+    count = status.get("compaction_count")
+    if reason is None or count is None:
+        return "compacted"
+    return f"compacted ({reason}, count={count})"
+
+
+def _evidence_summary_lines(
+    evidence: list[Evidence],
+    *,
+    max_items: int = 4,
+) -> list[str]:
+    """Build a compact evidence summary for user-facing reports."""
+    if not evidence:
+        return ["No evidence captured yet."]
+
+    counts: dict[str, int] = {}
+    for item in evidence:
+        counts[item.source] = counts.get(item.source, 0) + 1
+
+    parts = ["Evidence summary:"]
+    for source, count in sorted(counts.items()):
+        parts.append(f"- {source}: {count}")
+
+    parts.append("Recent evidence:")
+    for idx, item in enumerate(evidence[-max_items:], 1):
+        header = item.source
+        if item.source_op:
+            header += f" ({item.source_op})"
+        if item.command_exit_status is not None:
+            header += f" [exit {item.command_exit_status}]"
+        if item.file_path:
+            header += f" file={item.file_path}"
+        parts.append(f"{idx}. {header}: {item.snippet[:120]}")
+    return parts
+
+
+def _record_evidence(
+    manager: RLMSessionManager,
+    session_id: str,
+    source: str,
+    source_op: str,
+    snippet: str,
+    *,
+    line_range: tuple[int, int] | None = None,
+    pattern: str | None = None,
+    file_path: str | None = None,
+    command_exit_status: int | None = None,
+) -> None:
+    """Record evidence with extended metadata and consistent provenance fields."""
+    session = manager.get_session(session_id)
+    if session is None:
+        return
+    session.add_evidence(
+        Evidence(
+            source=source,  # type: ignore[arg-type]
+            source_op=source_op,
+            context_id=session_id,
+            file_path=file_path,
+            line_range=line_range,
+            pattern=pattern,
+            snippet=snippet,
+            command_exit_status=command_exit_status,
+        )
+    )
+
+
 # ===========================================================================
 # Context Tools (5)
 # ===========================================================================
+
 
 def _create_load_context_tool(manager: RLMSessionManager) -> BaseTool:
     def sync_load_context(
@@ -85,8 +159,10 @@ def _create_load_context_tool(manager: RLMSessionManager) -> BaseTool:
         line_number_base: Annotated[int, "Line numbering base: 0 or 1"] = 1,
     ) -> str:
         meta = manager.create_session(
-            content, context_id=context_id,
-            format_hint=format_hint, line_number_base=line_number_base,
+            content,
+            context_id=context_id,
+            format_hint=format_hint,
+            line_number_base=line_number_base,
         )
         return f"Context '{context_id}' loaded. {_fmt_meta(meta)}"
 
@@ -241,6 +317,7 @@ def _create_load_session_tool(manager: RLMSessionManager) -> BaseTool:
 # Query Tools (5)
 # ===========================================================================
 
+
 def _create_peek_context_tool(manager: RLMSessionManager) -> BaseTool:
     def sync_peek_context(
         context_id: Annotated[str, "Session identifier"] = "default",
@@ -249,7 +326,7 @@ def _create_peek_context_tool(manager: RLMSessionManager) -> BaseTool:
         unit: Annotated[str, "Unit: 'chars' or 'lines'"] = "chars",
     ) -> str:
         session = manager.get_or_create_session(context_id)
-        session.iterations += 1
+        compact_status = manager._note_tool_activity(context_id, source_op="peek_context")
 
         ctx_text = str(session.repl.get_variable("ctx") or "")
         if not ctx_text:
@@ -260,22 +337,29 @@ def _create_peek_context_tool(manager: RLMSessionManager) -> BaseTool:
             effective_end = end if end > 0 else len(all_lines)
             selected = all_lines[start:effective_end]
             result = "\n".join(
-                f"{i + start + session.line_number_base}: {line}"
-                for i, line in enumerate(selected)
+                f"{i + start + session.line_number_base}: {line}" for i, line in enumerate(selected)
             )
         else:
             effective_end = end if end > 0 else len(ctx_text)
             result = ctx_text[start:effective_end]
 
         snippet = result[:200]
-        session.add_evidence(_Evidence(
+        _record_evidence(
+            manager=manager,
+            session_id=context_id,
             source="peek",
+            source_op="peek_context",
+            snippet=snippet,
             line_range=(start, end) if unit == "lines" else None,
             pattern=None,
-            snippet=snippet,
-            note=f"peek {unit}[{start}:{end}]",
-        ))
-        return _truncate(result)
+            command_exit_status=None,
+        )
+
+        status = f"\n[context_pressure:{_format_pressure_status(manager.get_context_pressure_status(context_id))}]"
+        if compact_status:
+            status += f" [auto-compacted due to pressure: {compact_status}]"
+
+        return _truncate(result) + status
 
     async def async_peek_context(
         context_id: Annotated[str, "Session identifier"] = "default",
@@ -304,7 +388,7 @@ def _create_search_context_tool(manager: RLMSessionManager) -> BaseTool:
         max_results: Annotated[int, "Maximum matches to return"] = 10,
     ) -> str:
         session = manager.get_or_create_session(context_id)
-        session.iterations += 1
+        compact_status = manager._note_tool_activity(context_id, source_op="search_context")
 
         search_fn = session.repl.get_helper("search")
         if search_fn is None:
@@ -324,14 +408,20 @@ def _create_search_context_tool(manager: RLMSessionManager) -> BaseTool:
                 lines.append(f"  {ctx_text}")
 
         snippet = "\n".join(lines)[:300]
-        session.add_evidence(_Evidence(
+        _record_evidence(
+            manager=manager,
+            session_id=context_id,
             source="search",
-            line_range=None,
-            pattern=pattern,
+            source_op="search_context",
             snippet=snippet,
-            note=f"{len(results)} matches",
-        ))
-        return _truncate("\n".join(lines))
+            pattern=pattern,
+        )
+
+        output = _truncate("\n".join(lines))
+        status = f"\n[context_pressure:{_format_pressure_status(manager.get_context_pressure_status(context_id))}]"
+        if compact_status:
+            status += f" [auto-compacted due to pressure: {compact_status}]"
+        return output + status
 
     async def async_search_context(
         pattern: Annotated[str, "Regex pattern to search for"],
@@ -361,14 +451,17 @@ def _create_semantic_search_tool(manager: RLMSessionManager) -> BaseTool:
         top_k: Annotated[int, "Number of results to return"] = 5,
     ) -> str:
         session = manager.get_or_create_session(context_id)
-        session.iterations += 1
+        compact_status = manager._note_tool_activity(context_id, source_op="semantic_search")
 
         sem_fn = session.repl.get_helper("semantic_search")
         if sem_fn is None:
             return "semantic_search helper not available"
 
         results = sem_fn(
-            query, chunk_size=chunk_size, overlap=overlap, top_k=top_k,
+            query,
+            chunk_size=chunk_size,
+            overlap=overlap,
+            top_k=top_k,
         )
         if not results:
             return f"No semantic matches for: {query}"
@@ -380,14 +473,19 @@ def _create_semantic_search_tool(manager: RLMSessionManager) -> BaseTool:
             lines.append(f"[{i}] score={score:.3f}\n{text}")
 
         snippet = "\n".join(lines)[:300]
-        session.add_evidence(_Evidence(
+        _record_evidence(
+            manager=manager,
+            session_id=context_id,
             source="search",
-            line_range=None,
-            pattern=query,
+            source_op="semantic_search",
             snippet=snippet,
-            note=f"semantic_search top_{top_k}",
-        ))
-        return _truncate("\n\n".join(lines))
+            pattern=query,
+        )
+        output = _truncate("\n\n".join(lines))
+        status = f"\n[context_pressure:{_format_pressure_status(manager.get_context_pressure_status(context_id))}]"
+        if compact_status:
+            status += f" [auto-compacted due to pressure: {compact_status}]"
+        return output + status
 
     async def async_semantic_search(
         query: Annotated[str, "Natural language search query"],
@@ -414,49 +512,61 @@ def _create_cross_context_search_tool(manager: RLMSessionManager) -> BaseTool:
         pattern: Annotated[str, "Regex pattern to search for across all contexts"],
         context_lines: Annotated[int, "Lines of context around each match"] = 2,
         max_results_per_context: Annotated[int, "Maximum matches to return per context"] = 5,
-        contexts: Annotated[str | None, "Comma-separated context IDs to search (default: all)"] = None,
+        contexts: Annotated[
+            str | None, "Comma-separated context IDs to search (default: all)"
+        ] = None,
     ) -> str:
         """Search across multiple RLM contexts simultaneously.
-        
+
         This tool performs a regex search across all active contexts (or specified
         contexts) and returns results organized by context with source attribution.
-        
+
         Args:
             pattern: Regex pattern to search for.
             context_lines: Lines of context around each match.
             max_results_per_context: Maximum matches to return per context.
             contexts: Optional comma-separated list of context IDs to search.
                      If None, searches all active contexts.
-        
+
         Returns:
             Search results organized by context with source attribution.
         """
         sessions = manager.list_sessions()
         if not sessions:
             return "No active contexts to search."
-        
+
         # Determine which contexts to search
+        compact_status: dict[str, str | None] = {}
         if contexts:
             context_ids = [cid.strip() for cid in contexts.split(",") if cid.strip()]
         else:
             context_ids = list(sessions.keys())
-        
+
         all_results = []
-        
+
         for context_id in context_ids:
             session = manager.get_session(context_id)
             if session is None:
                 all_results.append(f"Context '{context_id}' not found.")
                 continue
-            
+
             search_fn = session.repl.get_helper("search")
             if search_fn is None:
                 all_results.append(f"Context '{context_id}': search helper not available")
                 continue
-            
-            results = search_fn(pattern, context_lines=context_lines, max_results=max_results_per_context)
-            
+
+            compact_marker = manager._note_tool_activity(
+                context_id, source_op="cross_context_search"
+            )
+
+            results = search_fn(
+                pattern, context_lines=context_lines, max_results=max_results_per_context
+            )
+
             if results:
+                compact_status[context_id] = compact_marker or _format_pressure_status(
+                    manager.get_context_pressure_status(context_id)
+                )
                 ctx_results = [f"## Context: {context_id}"]
                 for r in results:
                     line_num = r.get("line_num", "?")
@@ -465,34 +575,47 @@ def _create_cross_context_search_tool(manager: RLMSessionManager) -> BaseTool:
                     ctx_results.append(f"### Line {line_num}: {match_text}")
                     if ctx_text:
                         ctx_results.append(f"```\n{ctx_text}\n```")
-                
+
                 all_results.append("\n".join(ctx_results))
-                
+
                 # Record evidence for this search
                 snippet = "\n".join([r.get("match", "") for r in results[:3]])[:300]
-                session.add_evidence(_Evidence(
+                compact_status[context_id] = compact_status[context_id]
+                _record_evidence(
+                    manager=manager,
+                    session_id=context_id,
                     source="cross_context_search",
-                    line_range=None,
-                    pattern=pattern,
+                    source_op="cross_context_search",
                     snippet=snippet,
-                    note=f"cross-context search: {len(results)} matches",
-                ))
+                    pattern=pattern,
+                )
             else:
                 all_results.append(f"## Context: {context_id}\nNo matches found.")
-        
+                compact_status[context_id] = _format_pressure_status(
+                    manager.get_context_pressure_status(context_id)
+                )
+
         if not all_results:
             return "No contexts were searched."
-        
-        return _truncate("\n\n".join(all_results))
-    
+
+        summary_lines = [_truncate("\n\n".join(all_results))]
+        pressure_lines = [
+            f"{cid}:{status}" for cid, status in compact_status.items() if status
+        ]
+        if pressure_lines:
+            summary_lines.append("Pressure: " + ", ".join(pressure_lines))
+        return "\n".join(summary_lines)
+
     async def async_cross_context_search(
         pattern: Annotated[str, "Regex pattern to search for across all contexts"],
         context_lines: Annotated[int, "Lines of context around each match"] = 2,
         max_results_per_context: Annotated[int, "Maximum matches to return per context"] = 5,
-        contexts: Annotated[str | None, "Comma-separated context IDs to search (default: all)"] = None,
+        contexts: Annotated[
+            str | None, "Comma-separated context IDs to search (default: all)"
+        ] = None,
     ) -> str:
         return sync_cross_context_search(pattern, context_lines, max_results_per_context, contexts)
-    
+
     return StructuredTool.from_function(
         name="cross_context_search",
         description=(
@@ -512,7 +635,7 @@ def _create_exec_python_tool(manager: RLMSessionManager) -> BaseTool:
         context_id: Annotated[str, "Session identifier"] = "default",
     ) -> str:
         session = manager.get_or_create_session(context_id)
-        session.iterations += 1
+        compact_status = manager._note_tool_activity(context_id, source_op="exec_python")
 
         result = session.repl.execute(code)
 
@@ -534,17 +657,27 @@ def _create_exec_python_tool(manager: RLMSessionManager) -> BaseTool:
         output = "\n".join(parts) if parts else "(no output)"
 
         # Record evidence for any citations made during execution
+        exec_exit_code = 0 if result.error is None else 1
         for citation in session.repl._citations:
-            session.add_evidence(_Evidence(
+            _record_evidence(
+                manager=manager,
+                session_id=context_id,
                 source="exec",
+                source_op="exec_python",
+                snippet=str(citation.get("snippet", ""))[:300],
                 line_range=citation.get("line_range"),
                 pattern=None,
-                snippet=citation.get("snippet", "")[:300],
-                note=citation.get("note"),
-            ))
+                command_exit_status=exec_exit_code,
+            )
         session.repl._citations.clear()
 
-        return _truncate(output)
+        output = _truncate(output)
+        output += (
+            f"\n[context_pressure:{_format_pressure_status(manager.get_context_pressure_status(context_id))}]"
+        )
+        if compact_status:
+            output += f" [auto-compacted due to pressure: {compact_status}]"
+        return output
 
     async def async_exec_python(
         code: Annotated[str, "Python code to execute in the sandboxed REPL"],
@@ -595,6 +728,7 @@ def _create_get_variable_tool(manager: RLMSessionManager) -> BaseTool:
 # ===========================================================================
 # Reasoning Tools (5)
 # ===========================================================================
+
 
 def _create_think_tool(manager: RLMSessionManager) -> BaseTool:
     def sync_think(
@@ -653,7 +787,7 @@ def _create_evaluate_progress_tool(manager: RLMSessionManager) -> BaseTool:
         session.information_gain.append(current_evidence)
 
         parts = [
-            f"## Progress Evaluation",
+            "## Progress Evaluation",
             f"**Confidence:** {confidence_score:.0%}",
             f"**Information gain:** +{gain} evidence items (total: {current_evidence})",
             f"**Iterations:** {session.iterations}",
@@ -672,7 +806,9 @@ def _create_evaluate_progress_tool(manager: RLMSessionManager) -> BaseTool:
         if confidence_score >= 0.8:
             parts.append("\nConsider using `finalize` if you have sufficient evidence.")
         elif confidence_score < 0.3:
-            parts.append("\nConfidence is low. Consider more exploration with search_context or exec_python.")
+            parts.append(
+                "\nConfidence is low. Consider more exploration with search_context or exec_python."
+            )
 
         return "\n".join(parts)
 
@@ -683,7 +819,10 @@ def _create_evaluate_progress_tool(manager: RLMSessionManager) -> BaseTool:
         context_id: Annotated[str, "Session identifier"] = "default",
     ) -> str:
         return sync_evaluate_progress(
-            current_understanding, confidence_score, remaining_questions, context_id,
+            current_understanding,
+            confidence_score,
+            remaining_questions,
+            context_id,
         )
 
     return StructuredTool.from_function(
@@ -734,7 +873,8 @@ def _create_summarize_so_far_tool(manager: RLMSessionManager) -> BaseTool:
             helpers = set(session.repl._helpers.keys())
             builtins_keys = {"__builtins__", "ctx", "line_number_base"}
             user_vars = [
-                k for k in ns
+                k
+                for k in ns
                 if k not in helpers and k not in builtins_keys and not k.startswith("_")
             ]
             if user_vars:
@@ -753,7 +893,10 @@ def _create_summarize_so_far_tool(manager: RLMSessionManager) -> BaseTool:
         clear_history: Annotated[bool, "Clear think_history after summarizing"] = False,
     ) -> str:
         return sync_summarize_so_far(
-            context_id, include_evidence, include_variables, clear_history,
+            context_id,
+            include_evidence,
+            include_variables,
+            clear_history,
         )
 
     return StructuredTool.from_function(
@@ -783,7 +926,7 @@ def _create_get_evidence_tool(manager: RLMSessionManager) -> BaseTool:
             evidence = [e for e in evidence if e.source == source]
 
         total = len(evidence)
-        evidence = evidence[offset:offset + limit]
+        evidence = evidence[offset : offset + limit]
 
         if not evidence:
             return "No evidence collected yet."
@@ -828,7 +971,6 @@ def _create_finalize_tool(manager: RLMSessionManager) -> BaseTool:
         context_id: Annotated[str, "Session identifier"] = "default",
     ) -> str:
         session = manager.get_session(context_id)
-
         parts = [f"## Final Answer\n\n{answer}"]
         parts.append(f"\n**Confidence:** {confidence}")
 
@@ -836,14 +978,19 @@ def _create_finalize_tool(manager: RLMSessionManager) -> BaseTool:
             parts.append(f"**Reasoning:** {reasoning_summary}")
 
         if session:
-            parts.append(f"\n**Analysis stats:** {session.iterations} iterations, "
-                         f"{len(session.evidence)} evidence items, "
-                         f"{len(session.think_history)} think steps")
+            parts.append(
+                f"\n**Analysis stats:** {session.iterations} iterations, "
+                f"{len(session.evidence)} evidence items, "
+                f"{len(session.think_history)} think steps"
+            )
+            if manager.get_context_pressure_status(context_id).get("compacted"):
+                compacted = manager.get_context_pressure_status(context_id)
+                parts.append(
+                    f"**Context pressure:** compacted={compacted.get('compaction_count', 0)} "
+                    f"(reason: {compacted.get('last_compaction_reason') or 'n/a'})"
+                )
 
-            if session.evidence:
-                parts.append("\n### Supporting Evidence")
-                for i, ev in enumerate(session.evidence[-5:], 1):
-                    parts.append(f"{i}. [{ev.source}] {ev.snippet[:150]}")
+            parts.extend(_evidence_summary_lines(session.evidence))
 
         return "\n".join(parts)
 
@@ -870,6 +1017,7 @@ def _create_finalize_tool(manager: RLMSessionManager) -> BaseTool:
 # Status/Meta Tools (2)
 # ===========================================================================
 
+
 def _create_get_status_tool(manager: RLMSessionManager) -> BaseTool:
     def sync_get_status(
         context_id: Annotated[str, "Session identifier"] = "default",
@@ -883,9 +1031,9 @@ def _create_get_status_tool(manager: RLMSessionManager) -> BaseTool:
         helpers = set(session.repl._helpers.keys())
         builtins_keys = {"__builtins__", "ctx", "line_number_base"}
         user_vars = [
-            k for k in ns
-            if k not in helpers and k not in builtins_keys and not k.startswith("_")
+            k for k in ns if k not in helpers and k not in builtins_keys and not k.startswith("_")
         ]
+        pressure = manager.get_context_pressure_status(context_id)
 
         return (
             f"Context: {context_id}\n"
@@ -894,6 +1042,12 @@ def _create_get_status_tool(manager: RLMSessionManager) -> BaseTool:
             f"Tokens (est): ~{session.meta.size_tokens_estimate:,}\n"
             f"Iterations: {session.iterations}\n"
             f"Evidence: {len(session.evidence)} items\n"
+            f"Compacted: {pressure.get('compacted')} "
+            f"(count={pressure.get('compaction_count')}, "
+            f"reason={pressure.get('last_compaction_reason')})\n"
+            f"Pressure: token={pressure.get('token_pressure')}, "
+            f"iteration={pressure.get('iteration_pressure')}, "
+            f"needs_compaction={pressure.get('needs_compaction')}\n"
             f"Think steps: {len(session.think_history)}\n"
             f"Tasks: {len(session.tasks)}\n"
             f"Variables: {len(user_vars)} ({', '.join(sorted(user_vars)[:10])})"
@@ -989,11 +1143,12 @@ def _create_rlm_tasks_tool(manager: RLMSessionManager) -> BaseTool:
 # Recipe Tools (4)
 # ===========================================================================
 
+
 def _create_validate_recipe_tool(manager: RLMSessionManager) -> BaseTool:
     def sync_validate_recipe(
         recipe_json: Annotated[str, "Recipe payload as JSON string"],
     ) -> str:
-        from aleph.mcp.recipes import validate_recipe
+        from rlmagents.recipes import validate_recipe
 
         try:
             recipe = json.loads(recipe_json)
@@ -1022,7 +1177,7 @@ def _create_estimate_recipe_tool(manager: RLMSessionManager) -> BaseTool:
     def sync_estimate_recipe(
         recipe_json: Annotated[str, "Recipe payload as JSON string"],
     ) -> str:
-        from aleph.mcp.recipes import estimate_recipe, validate_recipe
+        from rlmagents.recipes import estimate_recipe, validate_recipe
 
         try:
             recipe = json.loads(recipe_json)
@@ -1054,7 +1209,7 @@ def _create_run_recipe_tool(manager: RLMSessionManager) -> BaseTool:
         recipe_json: Annotated[str, "Recipe payload as JSON string"],
         context_id: Annotated[str, "Session identifier"] = "default",
     ) -> str:
-        from aleph.mcp.recipes import validate_recipe
+        from rlmagents.recipes import validate_recipe
 
         try:
             recipe = json.loads(recipe_json)
@@ -1075,9 +1230,9 @@ def _create_run_recipe_tool(manager: RLMSessionManager) -> BaseTool:
             op = step.get("op", "unknown")
             try:
                 result = _execute_recipe_step(session, step)
-                results.append(f"Step {i+1} ({op}): {result}")
+                results.append(f"Step {i + 1} ({op}): {result}")
             except Exception as exc:
-                results.append(f"Step {i+1} ({op}): ERROR - {exc}")
+                results.append(f"Step {i + 1} ({op}): ERROR - {exc}")
                 break
 
         return "\n".join(results)
@@ -1140,10 +1295,15 @@ def _execute_recipe_step(session: Any, step: dict[str, Any]) -> str:
         if search_fn is None:
             return "search helper unavailable"
         results = search_fn(pattern, max_results=step.get("max_results", 50))
-        session.add_evidence(_Evidence(
-            source="search", line_range=None, pattern=pattern,
-            snippet=str(results[:3])[:300], note=f"recipe search: {len(results)} matches",
-        ))
+        session.add_evidence(
+            Evidence(
+                source="search",
+                line_range=None,
+                pattern=pattern,
+                snippet=str(results[:3])[:300],
+                note=f"recipe search: {len(results)} matches",
+            )
+        )
         return f"{len(results)} matches"
 
     elif op == "peek":
@@ -1183,10 +1343,13 @@ def _execute_recipe_step(session: Any, step: dict[str, Any]) -> str:
 # Config Tool (1)
 # ===========================================================================
 
+
 def _create_configure_rlm_tool(manager: RLMSessionManager) -> BaseTool:
     def sync_configure_rlm(
         sandbox_timeout: Annotated[float, "Sandbox timeout in seconds (0 = no change)"] = 0,
-        context_policy: Annotated[str, "Context policy: trusted or isolated (empty = no change)"] = "",
+        context_policy: Annotated[
+            str, "Context policy: trusted or isolated (empty = no change)"
+        ] = "",
     ) -> str:
         config = manager.update_config(
             sandbox_timeout=sandbox_timeout if sandbox_timeout > 0 else None,
@@ -1196,7 +1359,9 @@ def _create_configure_rlm_tool(manager: RLMSessionManager) -> BaseTool:
 
     async def async_configure_rlm(
         sandbox_timeout: Annotated[float, "Sandbox timeout in seconds (0 = no change)"] = 0,
-        context_policy: Annotated[str, "Context policy: trusted or isolated (empty = no change)"] = "",
+        context_policy: Annotated[
+            str, "Context policy: trusted or isolated (empty = no change)"
+        ] = "",
     ) -> str:
         return sync_configure_rlm(sandbox_timeout, context_policy)
 

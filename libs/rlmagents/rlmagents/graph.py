@@ -70,6 +70,14 @@ BASE_AGENT_PROMPT = (Path(__file__).resolve().parent / "base_prompt.md").read_te
 
 _LANGCHAIN_MIN_VERSION = (1, 2, 10)
 _LANGCHAIN_MAX_VERSION = (1, 3, 0)
+_CODING_RESPONSE_FIELDS = ("plan", "edits", "verification", "risks", "confidence")
+_CODING_RESPONSE_FIELD_DESCRIPTIONS = {
+    "plan": "Execution plan for requested coding work.",
+    "edits": "Concrete file- and line-level edits to apply.",
+    "verification": "Commands or checks to verify correctness.",
+    "risks": "Caveats and likely regressions.",
+    "confidence": "Confidence level from 0 to 1.",
+}
 
 
 def _get_langchain_version() -> str:
@@ -91,6 +99,74 @@ def _parse_version_tuple(version: str) -> tuple[int, int, int]:
 def _is_langchain_version_supported(version: str) -> bool:
     parsed = _parse_version_tuple(version)
     return _LANGCHAIN_MIN_VERSION <= parsed < _LANGCHAIN_MAX_VERSION
+
+
+def _extract_system_prompt_text(system_prompt: str | SystemMessage | None) -> str:
+    if system_prompt is None:
+        return ""
+    if isinstance(system_prompt, SystemMessage):
+        content = system_prompt.content
+        if isinstance(content, str):
+            return content
+        return "".join(
+            (
+                block
+                if isinstance(block, str)
+                else str(block.get("text", ""))
+                if isinstance(block, dict)
+                else str(block)
+            )
+            for block in content
+        )
+    return str(system_prompt)
+
+
+def _is_coding_task(system_prompt: str | SystemMessage | None) -> bool:
+    prompt = _extract_system_prompt_text(system_prompt).lower()
+    return bool(
+        re.search(
+            r"\b(code|coding|implement|refactor|patch|bug|function|class)\b",
+            prompt,
+        )
+    )
+
+
+def _coding_response_format() -> dict[str, Any]:
+    return {
+        "type": "json_schema",
+        "schema": {
+            "type": "object",
+            "properties": {
+                "plan": {
+                    "type": "string",
+                    "description": _CODING_RESPONSE_FIELD_DESCRIPTIONS["plan"],
+                },
+                "edits": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": _CODING_RESPONSE_FIELD_DESCRIPTIONS["edits"],
+                },
+                "verification": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": _CODING_RESPONSE_FIELD_DESCRIPTIONS["verification"],
+                },
+                "risks": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": _CODING_RESPONSE_FIELD_DESCRIPTIONS["risks"],
+                },
+                "confidence": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "description": _CODING_RESPONSE_FIELD_DESCRIPTIONS["confidence"],
+                },
+            },
+            "required": list(_CODING_RESPONSE_FIELDS),
+            "additionalProperties": False,
+        },
+    }
 
 
 @lru_cache(maxsize=1)
@@ -407,6 +483,9 @@ def create_rlm_agent(
         final_prompt = SystemMessage(content=new_content)
     else:
         final_prompt = system_prompt + "\n\n" + BASE_AGENT_PROMPT
+
+    if response_format is None and _is_coding_task(final_prompt):
+        response_format = _coding_response_format()
 
     agent_kwargs = _build_create_agent_kwargs(
         checkpointer=checkpointer,

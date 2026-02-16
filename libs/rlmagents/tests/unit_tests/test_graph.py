@@ -127,3 +127,84 @@ def test_create_agent_rejects_missing_persistence_signature(monkeypatch):
         match="missing required persistence args",
     ):
         graph.create_rlm_agent(model=Mock())
+
+
+def test_create_agent_defaults_coding_response_format(monkeypatch):
+    captured = {}
+
+    def fake_create_agent(
+        model,
+        *,
+        system_prompt=None,
+        tools=None,
+        middleware=(),
+        response_format=None,
+        context_schema=None,
+        backend=None,
+        debug=False,
+        name=None,
+        cache=None,
+        **_kwargs,
+    ):
+        captured["response_format"] = response_format
+        return Mock()
+
+    monkeypatch.setattr(graph, "create_agent", fake_create_agent)
+    monkeypatch.setattr(graph, "_get_langchain_version", lambda: "1.2.10")
+    _configure_graph_for_test(monkeypatch)
+
+    graph.create_rlm_agent(
+        model=Mock(),
+        system_prompt="Please implement this feature.",
+    )
+
+    response = captured["response_format"]
+    assert isinstance(response, dict)
+    assert response["schema"]["required"] == [
+        "plan",
+        "edits",
+        "verification",
+        "risks",
+        "confidence",
+    ]
+    assert set(response["schema"]["properties"]) == {
+        "plan",
+        "edits",
+        "verification",
+        "risks",
+        "confidence",
+    }
+
+
+def test_create_agent_keeps_explicit_response_format(monkeypatch):
+    captured = {}
+    explicit_format = {"type": "json_schema", "title": "UserFormat"}
+
+    def fake_create_agent(
+        model,
+        *,
+        system_prompt=None,
+        tools=None,
+        middleware=(),
+        response_format=None,
+        context_schema=None,
+        backend=None,
+        debug=False,
+        name=None,
+        cache=None,
+        **_kwargs,
+    ):
+        captured["response_format"] = response_format
+        return Mock()
+
+    monkeypatch.setattr(graph, "create_agent", fake_create_agent)
+    monkeypatch.setattr(graph, "_get_langchain_version", lambda: "1.2.10")
+    _configure_graph_for_test(monkeypatch)
+
+    graph.create_rlm_agent(
+        model=Mock(),
+        system_prompt="Please implement this feature.",
+        response_format=explicit_format,
+    )
+
+    assert captured["response_format"] is explicit_format

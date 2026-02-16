@@ -58,16 +58,20 @@ The agent is taught to use this workflow for complex analysis:
 ## Configuration
 
 ```python
+from langchain.chat_models import init_chat_model
 from rlmagents import create_rlm_agent
 
+# Both main model and sub_query model must be explicitly configured
 agent = create_rlm_agent(
-    model="claude-sonnet-4-5-20250929",  # Any LangChain model
-    skills=["/skills/analysis/"],         # Skill sources
-    memory=["/memory/AGENTS.md"],         # Memory files
-    auto_load_threshold=5000,             # Auto-load >5KB into RLM
-    sandbox_timeout=300.0,                # RLM REPL timeout
-    enable_rlm_in_subagents=True,         # RLM tools in sub-agents
-    interrupt_on={"edit_file": True},     # Human-in-the-loop
+    model="deepseek/deepseek-chat",       # Main agent model (required)
+    sub_query_model="minimax/minimax-01",  # Recursive sub-LLM (optional)
+    sub_query_timeout=120.0,               # Sub-query timeout
+    skills=["/skills/analysis/"],          # Skill sources
+    memory=["/memory/AGENTS.md"],          # Memory files
+    auto_load_threshold=5000,              # Auto-load >5KB into RLM
+    sandbox_timeout=300.0,                 # RLM REPL timeout
+    enable_rlm_in_subagents=True,          # RLM tools in sub-agents
+    interrupt_on={"edit_file": True},      # Human-in-the-loop
 )
 ```
 
@@ -80,19 +84,26 @@ rlmagents/
 │   └── middleware/        # Planning, filesystem, skills, memory, etc.
 ├── middleware/
 │   └── rlm.py             # RLM middleware (23 tools)
-├── session_manager.py     # Aleph REPL session management
+├── repl/                  # Sandboxed Python REPL with 100+ helpers
+│   ├── sandbox.py         # Sandboxed execution environment
+│   └── helpers.py         # Built-in helper functions
+├── session_manager.py     # Session lifecycle management
+├── serialization.py       # Session serialization (memory packs)
+├── recipes.py             # Recipe validation and execution
 └── graph.py               # create_rlm_agent() factory
 ```
 
 ## Requirements
 
 - Python 3.11+
-- `aleph-rlm>=0.8.5` — RLM core (REPL, sessions, evidence)
 - `langchain-core>=1.2.10`
 - `langchain>=1.2.10`
 - `langchain-anthropic>=0.3.0`
 - `langgraph>=0.3.0`
 - `pyyaml>=6.0`
+- `wcmatch>=10.0`
+
+**No external dependencies on aleph-rlm or deepagents** — rlmagents is fully standalone.
 
 ## Development
 
@@ -103,6 +114,70 @@ uv run pytest
 uv run ruff check .
 uv run ruff format .
 ```
+
+## Launch & Telemetry Checklist
+
+- One-command launch path:
+  ```bash
+  (cd "$(git rev-parse --show-toplevel)/libs/rlmagents" && uv run python examples/dogfood.py)
+  ```
+
+- Compatibility check command:
+  ```bash
+  (cd "$(git rev-parse --show-toplevel)/libs/rlmagents" && \
+  uv run python -c "from examples.bootstrap_config import _load_dotenv_if_available; from rlmagents import create_rlm_agent; _load_dotenv_if_available(); create_rlm_agent(); print('bootstrap ok')")
+  ```
+
+- Terminal flow smoke command:
+  ```bash
+  (cd "$(git rev-parse --show-toplevel)/libs/rlmagents" && \
+  uv run pytest tests/unit_tests/test_terminal_bench_scenarios.py -q)
+  ```
+
+- Benchmark-score output (optional when benchmark job is running):
+  ```bash
+  (cd "$(git rev-parse --show-toplevel)/libs/rlmagents" && \
+  RLMAGENTS_BENCHMARK_SCORE_PATH=$PWD/.artifacts/terminal_bench_score.json \
+    uv run pytest tests/unit_tests/test_terminal_bench_scenarios.py -q)
+  ```
+
+Expected JSON output format when score output is enabled:
+
+```json
+{
+  "read_edit_verify_loop": "passed",
+  "long_context_compaction": "passed",
+  "sub_query_stubbed_path": "passed",
+  "dogfood_mocked_provider": "passed"
+}
+```
+
+Model- and run-time telemetry checks should include:
+
+- Whether `create_configured_agent()` can initialize (or skip with explicit env-based reason).
+- Whether terminal-bench scenarios report all keys above.
+- Whether `examples/dogfood.py` executes `run_tooled_dogfood()` and prints agent output when keys are present.
+
+### Success criteria
+
+- **Bootstrap**: `examples/bootstrap_config.py` imports, and `uv run python -c ...` check returns
+  `bootstrap ok`.
+- **Model connectivity**: `create_configured_agent()` returns a runnable agent object when provider keys
+  are present, and `create_rlm_agent` is constructible with mocked tool call flows.
+- **Dogfood readiness**: `uv run python examples/dogfood.py` executes `run_tooled_dogfood()` and, when
+  keys are present, prints model output without uncaught exceptions.
+- **Terminal-flow readiness**: scenario smoke tests in
+  `tests/unit_tests/test_terminal_bench_scenarios.py` pass.
+- **Benchmark readiness**: scenario smoke tests emit the terminal bench score artifact (when enabled)
+  and include all four scenario keys.
+
+### Failure criteria
+
+- Any syntax/import error in `rlmagents` or `examples/bootstrap_config.py`.
+- Missing environment variables for provider-backed flows (`DEEPSEEK_API_KEY` or `MINIMAX_API_KEY`).
+- `uv run pytest tests/unit_tests/test_terminal_bench_scenarios.py` failures.
+- `create_configured_agent()` or `dogfood.py` raising runtime exceptions instead of exiting with explicit
+  skip/failure output.
 
 ## Comparison
 

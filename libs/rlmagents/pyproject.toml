@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "rlmagents"
 version = "0.1.0"
-description = "RLM-enhanced agents: Aleph's recursive reasoning with built-in planning, filesystem, and sub-agent capabilities"
+description = "RLM-enhanced agent harness: planning, filesystem, sub-agents, plus 23 tools for context isolation and evidence-backed reasoning"
 readme = "README.md"
 requires-python = ">=3.11,<4.0"
 license = {text = "MIT"}
@@ -26,7 +26,6 @@ dependencies = [
     "langchain>=1.2.10,<2.0.0",
     "langchain-anthropic>=0.3.0",
     "langgraph>=0.3.0",
-    "pyyaml>=6.0",
 ]
 
 [dependency-groups]

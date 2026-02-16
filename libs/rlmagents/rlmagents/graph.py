@@ -16,7 +16,10 @@ and produce cited conclusions.
 from __future__ import annotations
 
 import inspect
+import re
 from collections.abc import Callable, Sequence
+from functools import lru_cache
+from importlib.metadata import PackageNotFoundError, version as _get_package_version
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -64,6 +67,60 @@ from langchain_anthropic.middleware import AnthropicPromptCachingMiddleware
 
 # Load base prompt
 BASE_AGENT_PROMPT = (Path(__file__).resolve().parent / "base_prompt.md").read_text()
+
+_LANGCHAIN_MIN_VERSION = (1, 2, 10)
+_LANGCHAIN_MAX_VERSION = (1, 3, 0)
+
+
+def _get_langchain_version() -> str:
+    """Return the installed langchain version."""
+    return _get_package_version("langchain")
+
+
+def _parse_version_tuple(version: str) -> tuple[int, int, int]:
+    match = re.match(r"^(?P<major>\d+)\.(?P<minor>\d+)\.(?P<patch>\d+)", version)
+    if not match:
+        raise ValueError(f"Unable to parse langchain version string: {version!r}")
+    return (
+        int(match.group("major")),
+        int(match.group("minor")),
+        int(match.group("patch")),
+    )
+
+
+def _is_langchain_version_supported(version: str) -> bool:
+    parsed = _parse_version_tuple(version)
+    return _LANGCHAIN_MIN_VERSION <= parsed < _LANGCHAIN_MAX_VERSION
+
+
+@lru_cache(maxsize=1)
+def _assert_langchain_compatibility() -> None:
+    """Fail fast if the installed langchain API is unsupported."""
+    try:
+        version = _get_langchain_version()
+    except PackageNotFoundError as exc:
+        raise RuntimeError(
+            "rlmagents requires langchain to build agents."
+        ) from exc
+
+    if not _is_langchain_version_supported(version):
+        minimum_version = ".".join(map(str, _LANGCHAIN_MIN_VERSION))
+        maximum_version = ".".join(map(str, _LANGCHAIN_MAX_VERSION))
+        raise RuntimeError(
+            "rlmagents supports langchain version >= "
+            f"{minimum_version} and < {maximum_version}; "
+            f"installed version is {version}."
+        )
+
+    create_agent_signature = inspect.signature(create_agent)
+    parameters = create_agent_signature.parameters
+    if "backend" not in parameters and not (
+        "checkpointer" in parameters and "store" in parameters
+    ):
+        raise RuntimeError(
+            "Installed langchain.agents.create_agent is missing required persistence args. "
+            "Expected `backend` or both `checkpointer` and `store`."
+        )
 
 
 def _build_create_agent_kwargs(
@@ -158,6 +215,8 @@ def create_rlm_agent(
     Returns:
         Compiled LangGraph agent.
     """
+    _assert_langchain_compatibility()
+
     # Resolve model
     if model is None:
         model = get_default_model()

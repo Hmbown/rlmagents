@@ -26,6 +26,7 @@ on:
         options:
           - deepagents
           - deepagents-cli
+          - rlmagents
           - deepagents-acp
           - deepagents-harbor
           - langchain-daytona
@@ -69,6 +70,9 @@ jobs:
             deepagents)
               echo "working-dir=libs/deepagents" >> $GITHUB_OUTPUT
               ;;
+            rlmagents)
+              echo "working-dir=libs/rlmagents" >> $GITHUB_OUTPUT
+              ;;
             deepagents-cli)
               echo "working-dir=libs/cli" >> $GITHUB_OUTPUT
               ;;
@@ -89,7 +93,7 @@ jobs:
               ;;
             *)
               echo "Error: Unknown package '$PACKAGE'"
-              echo "Valid packages are: deepagents, deepagents-cli, deepagents-acp, deepagents-harbor, langchain-daytona, langchain-modal, langchain-runloop"
+              echo "Valid packages are: deepagents, rlmagents, deepagents-cli, deepagents-acp, deepagents-harbor, langchain-daytona, langchain-modal, langchain-runloop"
               exit 1
               ;;
           esac
@@ -556,8 +560,42 @@ jobs:
           VIRTUAL_ENV=.venv uv pip install dist/*.whl
 
       - name: Run unit tests
+        if: needs.build.outputs.pkg-name != 'rlmagents'
         run: make test
         working-directory: ${{ env.WORKING_DIR }}
+
+      - name: Run rlmagents unit tests
+        if: needs.build.outputs.pkg-name == 'rlmagents'
+        working-directory: ${{ env.WORKING_DIR }}
+        run: |
+          uv run pytest tests/unit_tests -q
+
+      - name: Run rlmagents ruff check
+        if: needs.build.outputs.pkg-name == 'rlmagents'
+        working-directory: ${{ env.WORKING_DIR }}
+        run: uv run ruff check rlmagents tests
+
+      - name: Run rlmagents bootstrap compatibility command
+        if: needs.build.outputs.pkg-name == 'rlmagents'
+        working-directory: ${{ env.WORKING_DIR }}
+        run: uv run python -c "from examples.bootstrap_config import _load_dotenv_if_available; from rlmagents import create_rlm_agent; _load_dotenv_if_available(); create_rlm_agent(); print('bootstrap ok')"
+
+      - name: Run rlmagents terminal-flow smoke
+        if: needs.build.outputs.pkg-name == 'rlmagents'
+        working-directory: ${{ env.WORKING_DIR }}
+        env:
+          RLMAGENTS_BENCHMARK_SCORE_PATH: ${{ github.workspace }}/${{ env.WORKING_DIR }}/.artifacts/terminal_bench_score.json
+        run: |
+          mkdir -p .artifacts
+          uv run pytest tests/unit_tests/test_terminal_bench_scenarios.py -q
+
+      - name: Upload rlmagents benchmark score artifact
+        if: needs.build.outputs.pkg-name == 'rlmagents'
+        uses: actions/upload-artifact@v6
+        with:
+          name: rlmagents-terminal-bench-score
+          path: ${{ env.WORKING_DIR }}/.artifacts/terminal_bench_score.json
+          if-no-files-found: ignore
 
       - name: Run integration tests
         # Only run integration tests if they exist (currently only for deepagents package)

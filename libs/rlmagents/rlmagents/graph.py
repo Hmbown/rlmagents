@@ -15,6 +15,7 @@ and produce cited conclusions.
 
 from __future__ import annotations
 
+import inspect
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -63,6 +64,34 @@ from langchain_anthropic.middleware import AnthropicPromptCachingMiddleware
 
 # Load base prompt
 BASE_AGENT_PROMPT = (Path(__file__).resolve().parent / "base_prompt.md").read_text()
+
+
+def _build_create_agent_kwargs(
+    checkpointer: Checkpointer | None,
+    store: BaseStore | None,
+    backend: BackendProtocol | BackendFactory | None,
+    debug: bool,
+    name: str | None,
+    cache: BaseCache | None,
+) -> dict[str, Any]:
+    """Build a kwargs mapping for langchain.agents.create_agent."""
+    create_agent_parameters = inspect.signature(create_agent).parameters
+    kwargs: dict[str, Any] = {}
+
+    if "backend" in create_agent_parameters:
+        kwargs["backend"] = backend
+    else:
+        kwargs["checkpointer"] = checkpointer
+        kwargs["store"] = store
+
+    if "debug" in create_agent_parameters:
+        kwargs["debug"] = debug
+    if "name" in create_agent_parameters:
+        kwargs["name"] = name
+    if "cache" in create_agent_parameters:
+        kwargs["cache"] = cache
+
+    return kwargs
 
 
 def get_default_model() -> ChatAnthropic:
@@ -320,6 +349,15 @@ def create_rlm_agent(
     else:
         final_prompt = system_prompt + "\n\n" + BASE_AGENT_PROMPT
 
+    agent_kwargs = _build_create_agent_kwargs(
+        checkpointer=checkpointer,
+        store=store,
+        backend=resolved_backend,
+        debug=debug,
+        name=name,
+        cache=cache,
+    )
+
     return create_agent(
         model,
         system_prompt=final_prompt,
@@ -327,10 +365,5 @@ def create_rlm_agent(
         middleware=agent_middleware,
         response_format=response_format,
         context_schema=context_schema,
-        checkpointer=checkpointer,
-        store=store,
-        backend=resolved_backend,
-        debug=debug,
-        name=name,
-        cache=cache,
+        **agent_kwargs,
     ).with_config({"recursion_limit": 1000})

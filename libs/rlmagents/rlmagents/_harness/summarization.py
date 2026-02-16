@@ -46,10 +46,21 @@ from langchain.agents.middleware.summarization import (
     SummarizationMiddleware as LCSummarizationMiddleware,
     TokenCounter,
 )
-from langchain.agents.middleware.types import AgentMiddleware, AgentState, ExtendedModelResponse, PrivateStateAttr
+from langchain.agents.middleware.types import (
+    AgentMiddleware,
+    AgentState,
+    ExtendedModelResponse,
+    PrivateStateAttr,
+)
 from langchain.tools import ToolRuntime
 from langchain_core.exceptions import ContextOverflowError
-from langchain_core.messages import AIMessage, AnyMessage, HumanMessage, SystemMessage, get_buffer_string
+from langchain_core.messages import (
+    AIMessage,
+    AnyMessage,
+    HumanMessage,
+    SystemMessage,
+    get_buffer_string,
+)
 from langchain_core.messages.utils import count_tokens_approximately
 from langgraph.config import get_config
 from langgraph.types import Command
@@ -58,13 +69,12 @@ from typing_extensions import TypedDict
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
+    from deepagents.backends.protocol import BACKEND_TYPES, BackendProtocol
     from langchain.agents.middleware.types import ModelRequest, ModelResponse
     from langchain.chat_models import BaseChatModel
     from langchain_core.runnables.config import RunnableConfig
     from langchain_core.tools import BaseTool
     from langgraph.runtime import Runtime
-
-    from deepagents.backends.protocol import BACKEND_TYPES, BackendProtocol
 
 logger = logging.getLogger(__name__)
 

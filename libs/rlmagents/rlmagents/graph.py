@@ -47,6 +47,9 @@ if TYPE_CHECKING:
     from rlmagents._harness.subagents import CompiledSubAgent, SubAgent
 
 # Import incorporated harness
+from langchain_anthropic import ChatAnthropic
+from langchain_anthropic.middleware import AnthropicPromptCachingMiddleware
+
 from rlmagents._harness.backends import StateBackend
 from rlmagents._harness.filesystem import FilesystemMiddleware
 from rlmagents._harness.memory import MemoryMiddleware
@@ -62,8 +65,6 @@ from rlmagents._harness.summarization import (
     SummarizationMiddleware,
     _compute_summarization_defaults,
 )
-from langchain_anthropic import ChatAnthropic
-from langchain_anthropic.middleware import AnthropicPromptCachingMiddleware
 
 # Load base prompt
 BASE_AGENT_PROMPT = (Path(__file__).resolve().parent / "base_prompt.md").read_text()

@@ -245,6 +245,39 @@ class TestModelSwitchErrorHandling:
         assert settings.model_context_limit is None
 
     @pytest.mark.asyncio
+    async def test_model_switch_preserves_selected_harness(self) -> None:
+        """Model hot-swap should recreate the agent with the app's harness."""
+        app = DeepAgentsApp(harness="rlmagents")
+        app._mount_message = AsyncMock()  # type: ignore[method-assign]
+        app._checkpointer = MagicMock()
+
+        settings.model_name = "gpt-4o"
+        settings.model_provider = "openai"
+
+        mock_result = ModelResult(
+            model=MagicMock(),
+            model_name="claude-sonnet-4-5",
+            provider="anthropic",
+            context_limit=200_000,
+        )
+        mock_agent = MagicMock()
+        mock_backend = MagicMock()
+
+        with (
+            patch("deepagents_cli.app.has_provider_credentials", return_value=True),
+            patch("deepagents_cli.app.create_model", return_value=mock_result),
+            patch(
+                "deepagents_cli.app.create_cli_agent",
+                return_value=(mock_agent, mock_backend),
+            ) as mock_create_agent,
+            patch("deepagents_cli.app.save_recent_model", return_value=True),
+        ):
+            await app._switch_model("anthropic:claude-sonnet-4-5")
+
+        assert mock_create_agent.call_count == 1
+        assert mock_create_agent.call_args.kwargs["harness"] == "rlmagents"
+
+    @pytest.mark.asyncio
     async def test_agent_failure_rollback_with_none_context_limit(self) -> None:
         """Rollback restores previous context limit when new model has None."""
         app = DeepAgentsApp()

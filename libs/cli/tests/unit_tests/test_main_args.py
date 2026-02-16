@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from deepagents_cli.config import parse_shell_allow_list
-from deepagents_cli.main import apply_stdin_pipe, parse_args
+from deepagents_cli.main import _resolve_harness, apply_stdin_pipe, parse_args
 
 MockArgvType = Callable[..., AbstractContextManager[object]]
 
@@ -65,6 +65,48 @@ def test_shell_allow_list_combined_with_other_args(mock_argv: MockArgvType) -> N
         assert parsed_args.shell_allow_list == "ls,cat"
         assert parsed_args.model == "gpt-4o"
         assert parsed_args.auto_approve is True
+
+
+class TestHarnessArgument:
+    """Tests for --harness parsing and resolution."""
+
+    def test_harness_argument_parses(self, mock_argv: MockArgvType) -> None:
+        """`--harness` should parse accepted values."""
+        with mock_argv("--harness", "rlmagents"):
+            parsed_args = parse_args()
+            assert parsed_args.harness == "rlmagents"
+
+    def test_harness_defaults_to_none(self, mock_argv: MockArgvType) -> None:
+        """When omitted, harness should be None so settings can decide."""
+        with mock_argv():
+            parsed_args = parse_args()
+            assert parsed_args.harness is None
+
+    def test_resolve_harness_prefers_cli_value(self) -> None:
+        """CLI value has highest precedence and is persisted."""
+        with patch("deepagents_cli.main.settings") as mock_settings:
+            result = _resolve_harness("agent", "rlmagents")
+            assert result == "rlmagents"
+            mock_settings.save_agent_harness.assert_called_once_with(
+                "agent", "rlmagents"
+            )
+            mock_settings.get_agent_harness.assert_not_called()
+
+    def test_resolve_harness_uses_persisted_value(self) -> None:
+        """Persisted value is used when CLI flag is absent."""
+        with patch("deepagents_cli.main.settings") as mock_settings:
+            mock_settings.get_agent_harness.return_value = "rlmagents"
+            result = _resolve_harness("agent", None)
+            assert result == "rlmagents"
+            mock_settings.save_agent_harness.assert_not_called()
+            mock_settings.get_agent_harness.assert_called_once_with("agent")
+
+    def test_resolve_harness_falls_back_to_deepagents(self) -> None:
+        """Default harness should be deepagents when no setting exists."""
+        with patch("deepagents_cli.main.settings") as mock_settings:
+            mock_settings.get_agent_harness.return_value = None
+            result = _resolve_harness("agent", None)
+            assert result == "deepagents"
 
 
 @pytest.mark.parametrize(

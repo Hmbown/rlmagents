@@ -5,7 +5,7 @@ import shutil
 import tempfile
 from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from deepagents import create_deep_agent
 from deepagents.backends import CompositeBackend
@@ -14,6 +14,11 @@ from deepagents.backends.sandbox import SandboxBackendProtocol
 from deepagents.middleware import MemoryMiddleware, SkillsMiddleware
 
 from deepagents_cli.backends import CLIShellBackend, patch_filesystem_middleware
+
+try:
+    from rlmagents import create_rlm_agent
+except ImportError:
+    create_rlm_agent = None
 
 if TYPE_CHECKING:
     from deepagents.middleware.subagents import CompiledSubAgent, SubAgent
@@ -43,6 +48,8 @@ from deepagents_cli.subagents import list_subagents
 
 DEFAULT_AGENT_NAME = "agent"
 """The default agent name used when no `-a` flag is provided."""
+
+HarnessType = Literal["deepagents", "rlmagents"]
 
 
 def list_agents() -> None:
@@ -374,6 +381,7 @@ def create_cli_agent(
     model: str | BaseChatModel,
     assistant_id: str,
     *,
+    harness: HarnessType = "deepagents",
     tools: Sequence[BaseTool | Callable | dict[str, Any]] | None = None,
     sandbox: SandboxBackendProtocol | None = None,
     sandbox_type: str | None = None,
@@ -392,6 +400,10 @@ def create_cli_agent(
     Args:
         model: LLM model to use (e.g., `'anthropic:claude-sonnet-4-5-20250929'`)
         assistant_id: Agent identifier for memory/state storage
+        harness: Agent harness runtime to use.
+
+            - `'deepagents'`: Use the deepagents harness (default)
+            - `'rlmagents'`: Use the rlmagents recursive harness
         tools: Additional tools to provide to agent
         sandbox: Optional sandbox backend for remote execution
             (e.g., `ModalBackend`).
@@ -424,6 +436,11 @@ def create_cli_agent(
             - `agent_graph`: Configured LangGraph Pregel instance ready
                 for execution
             - `composite_backend`: `CompositeBackend` for file operations
+
+    Raises:
+        ImportError: If `harness="rlmagents"` is requested but rlmagents is not
+            installed.
+        ValueError: If `harness` is not a supported value.
     """
     tools = tools or []
 
@@ -567,20 +584,42 @@ def create_cli_agent(
 
     # Create the agent
     # Use provided checkpointer or fallback to InMemorySaver
-    if sandbox is None and enable_shell:
+    if harness == "deepagents" and sandbox is None and enable_shell:
         # Patch FilesystemMiddleware so the SDK constructs our subclass with
         # per-command timeout support on the execute tool. Only needed in local
         # shell mode -- remote sandbox backends do not accept the timeout kwarg.
         patch_filesystem_middleware()
     final_checkpointer = checkpointer if checkpointer is not None else InMemorySaver()
-    agent = create_deep_agent(
-        model=model,
-        system_prompt=system_prompt,
-        tools=tools,
-        backend=composite_backend,
-        middleware=agent_middleware,
-        interrupt_on=interrupt_on,
-        checkpointer=final_checkpointer,
-        subagents=custom_subagents or None,
-    ).with_config(config)
+
+    if harness == "deepagents":
+        agent = create_deep_agent(
+            model=model,
+            system_prompt=system_prompt,
+            tools=tools,
+            backend=composite_backend,
+            middleware=agent_middleware,
+            interrupt_on=interrupt_on,
+            checkpointer=final_checkpointer,
+            subagents=custom_subagents or None,
+        ).with_config(config)
+    elif harness == "rlmagents":
+        if create_rlm_agent is None:
+            msg = (
+                "rlmagents harness is not available. Install rlmagents to use "
+                "--harness rlmagents."
+            )
+            raise ImportError(msg)
+        agent = create_rlm_agent(
+            model=model,
+            system_prompt=system_prompt,
+            tools=tools,
+            backend=composite_backend,
+            middleware=agent_middleware,
+            interrupt_on=interrupt_on,
+            checkpointer=final_checkpointer,
+            subagents=custom_subagents or None,
+        ).with_config(config)
+    else:
+        msg = f"Unsupported harness: {harness!r}"
+        raise ValueError(msg)
     return agent, composite_backend

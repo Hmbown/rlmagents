@@ -1,3 +1,4 @@
 {
-  "libs/cli": "0.0.21"
+  "libs/cli": "0.0.21",
+  "libs/rlmagents": "0.1.0"
 }

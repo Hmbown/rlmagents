@@ -25,7 +25,7 @@ from textual.css.query import NoMatches
 from textual.screen import ModalScreen
 from textual.widgets import Static
 
-from deepagents_cli.agent import create_cli_agent
+from deepagents_cli.agent import HarnessType, create_cli_agent
 from deepagents_cli.clipboard import copy_selection_to_clipboard
 from deepagents_cli.config import (
     DOCS_URL,
@@ -395,6 +395,7 @@ class DeepAgentsApp(App):
         *,
         agent: Pregel | None = None,
         assistant_id: str | None = None,
+        harness: HarnessType = "deepagents",
         backend: CompositeBackend | None = None,
         auto_approve: bool = False,
         cwd: str | Path | None = None,
@@ -411,6 +412,7 @@ class DeepAgentsApp(App):
         Args:
             agent: Pre-configured LangGraph agent (optional for standalone mode)
             assistant_id: Agent identifier for memory storage
+            harness: Agent harness runtime (`deepagents` or `rlmagents`)
             backend: Backend for file operations
             auto_approve: Whether to start with auto-approve enabled
             cwd: Current working directory to display
@@ -425,6 +427,7 @@ class DeepAgentsApp(App):
         super().__init__(**kwargs)
         self._agent = agent
         self._assistant_id = assistant_id
+        self._harness = harness
         self._backend = backend
         self._auto_approve = auto_approve
         self._cwd = str(cwd) if cwd else str(Path.cwd())
@@ -1943,6 +1946,7 @@ class DeepAgentsApp(App):
             new_agent, new_backend = create_cli_agent(
                 model=result.model,
                 assistant_id=self._assistant_id or "default",
+                harness=self._harness,
                 tools=self._tools,
                 sandbox=self._sandbox,
                 sandbox_type=self._sandbox_type,
@@ -2043,6 +2047,7 @@ async def run_textual_app(
     *,
     agent: Pregel | None = None,
     assistant_id: str | None = None,
+    harness: HarnessType = "deepagents",
     backend: CompositeBackend | None = None,
     auto_approve: bool = False,
     cwd: str | Path | None = None,
@@ -2058,6 +2063,7 @@ async def run_textual_app(
     Args:
         agent: Pre-configured LangGraph agent (optional)
         assistant_id: Agent identifier for memory storage
+        harness: Agent harness runtime (`deepagents` or `rlmagents`)
         backend: Backend for file operations
         auto_approve: Whether to start with auto-approve enabled
         cwd: Current working directory to display
@@ -2074,6 +2080,7 @@ async def run_textual_app(
     app = DeepAgentsApp(
         agent=agent,
         assistant_id=assistant_id,
+        harness=harness,
         backend=backend,
         auto_approve=auto_approve,
         cwd=cwd,

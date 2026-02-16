@@ -7,6 +7,7 @@ import os
 import re
 import shlex
 import sys
+import tomllib
 import uuid
 from dataclasses import dataclass
 from enum import StrEnum
@@ -15,11 +16,14 @@ from pathlib import Path
 from typing import Any
 
 import dotenv
+import tomli_w
 from rich.console import Console
 
 from deepagents_cli._version import __version__
 
 logger = logging.getLogger(__name__)
+
+_VALID_AGENT_HARNESSES = frozenset({"deepagents", "rlmagents"})
 
 dotenv.load_dotenv()
 
@@ -620,6 +624,97 @@ class Settings:
         agent_dir.mkdir(parents=True, exist_ok=True)
         return agent_dir
 
+    def get_agent_settings_path(self, agent_name: str) -> Path:
+        """Get per-agent settings file path.
+
+        Args:
+            agent_name: Name of the agent.
+
+        Returns:
+            Path to `~/.deepagents/{agent_name}/settings.toml`.
+        """
+        return self.get_agent_dir(agent_name) / "settings.toml"
+
+    def load_agent_settings(self, agent_name: str) -> dict[str, Any]:
+        """Load per-agent settings from TOML.
+
+        Args:
+            agent_name: Name of the agent.
+
+        Returns:
+            Parsed settings dictionary, or empty dict on missing/invalid file.
+        """
+        settings_path = self.get_agent_settings_path(agent_name)
+        if not settings_path.exists():
+            return {}
+
+        try:
+            with settings_path.open("rb") as f:
+                data = tomllib.load(f)
+        except (OSError, tomllib.TOMLDecodeError):
+            logger.warning(
+                "Failed to parse agent settings at %s",
+                settings_path,
+                exc_info=True,
+            )
+            return {}
+
+        if not isinstance(data, dict):
+            return {}
+
+        return data
+
+    def get_agent_harness(self, agent_name: str) -> str | None:
+        """Get persisted harness for an agent, if configured.
+
+        Args:
+            agent_name: Name of the agent.
+
+        Returns:
+            Harness name (`deepagents` or `rlmagents`) if valid, otherwise None.
+        """
+        harness = self.load_agent_settings(agent_name).get("harness")
+        if isinstance(harness, str) and harness in _VALID_AGENT_HARNESSES:
+            return harness
+        return None
+
+    def save_agent_harness(self, agent_name: str, harness: str) -> bool:
+        """Persist harness selection for an agent.
+
+        Args:
+            agent_name: Name of the agent.
+            harness: Harness identifier (`deepagents` or `rlmagents`).
+
+        Returns:
+            True if saved successfully, False if write fails.
+
+        Raises:
+            ValueError: If the harness value is unsupported.
+        """
+        if harness not in _VALID_AGENT_HARNESSES:
+            msg = (
+                f"Invalid harness: {harness!r}. Supported values are "
+                "'deepagents' and 'rlmagents'."
+            )
+            raise ValueError(msg)
+
+        settings_data = self.load_agent_settings(agent_name)
+        settings_data["harness"] = harness
+
+        settings_path = self.get_agent_settings_path(agent_name)
+        settings_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            settings_path.write_text(tomli_w.dumps(settings_data), encoding="utf-8")
+        except OSError:
+            logger.warning(
+                "Failed to write agent settings at %s",
+                settings_path,
+                exc_info=True,
+            )
+            return False
+
+        return True
+
     def get_user_skills_dir(self, agent_name: str) -> Path:
         """Get user-level skills directory path for a specific agent.
 
@@ -1076,7 +1171,7 @@ def detect_provider(model_name: str) -> str | None:
         model_name: Model name to detect provider from.
 
     Returns:
-        Provider name (openai, anthropic, google_genai, google_vertexai) or
+        Provider name (openai, anthropic, deepseek, google_genai, google_vertexai) or
             `None` if the provider cannot be determined from the name alone.
     """
     model_lower = model_name.lower()
@@ -1093,6 +1188,9 @@ def detect_provider(model_name: str) -> str | None:
         if settings.has_vertex_ai and not settings.has_google:
             return "google_vertexai"
         return "google_genai"
+
+    if model_lower.startswith("deepseek"):
+        return "deepseek"
 
     return None
 
@@ -1131,10 +1229,13 @@ def _get_default_model_spec() -> str:
     if settings.has_vertex_ai:
         model = os.environ.get("VERTEX_AI_MODEL", "gemini-3-pro-preview")
         return f"google_vertexai:{model}"
+    if os.environ.get("DEEPSEEK_API_KEY"):
+        model = os.environ.get("DEEPSEEK_MODEL", "deepseek-chat")
+        return f"deepseek:{model}"
 
     msg = (
         "No credentials configured. Please set one of: "
-        "ANTHROPIC_API_KEY, OPENAI_API_KEY, GOOGLE_API_KEY, "
+        "ANTHROPIC_API_KEY, OPENAI_API_KEY, GOOGLE_API_KEY, DEEPSEEK_API_KEY, "
         "or GOOGLE_CLOUD_PROJECT"
     )
     raise ModelConfigError(msg)
@@ -1151,6 +1252,10 @@ def _get_provider_kwargs(
     When `model_name` is provided, per-model overrides from the `params`
     sub-table are shallow-merged on top.
 
+    For `deepseek`, applies environment fallbacks when config values are absent:
+    - `base_url`: `DEEPSEEK_BASE_URL` or `https://api.deepseek.com`
+    - `api_key`: `DEEPSEEK_API_KEY`
+
     Args:
         provider: Provider name (e.g., openai, anthropic, fireworks, ollama).
         model_name: Optional model name for per-model overrides.
@@ -1163,11 +1268,19 @@ def _get_provider_kwargs(
     base_url = config.get_base_url(provider)
     if base_url:
         result["base_url"] = base_url
+    elif provider == "deepseek":
+        result["base_url"] = os.environ.get(
+            "DEEPSEEK_BASE_URL", "https://api.deepseek.com"
+        )
     api_key_env = config.get_api_key_env(provider)
     if api_key_env:
         api_key = os.environ.get(api_key_env)
         if api_key:
             result["api_key"] = api_key
+    elif provider == "deepseek":
+        deepseek_key = os.environ.get("DEEPSEEK_API_KEY")
+        if deepseek_key:
+            result["api_key"] = deepseek_key
     return result
 
 

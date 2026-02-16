@@ -35,7 +35,7 @@ from rich.console import Console
 from rich.style import Style
 from rich.text import Text
 
-from deepagents_cli.agent import DEFAULT_AGENT_NAME, create_cli_agent
+from deepagents_cli.agent import DEFAULT_AGENT_NAME, HarnessType, create_cli_agent
 from deepagents_cli.config import (
     SHELL_TOOL_NAMES,
     build_langsmith_thread_url,
@@ -524,6 +524,7 @@ def _build_non_interactive_header(assistant_id: str, thread_id: str) -> Text:
 async def run_non_interactive(
     message: str,
     assistant_id: str = "agent",
+    harness: HarnessType = "deepagents",
     model_name: str | None = None,
     model_params: dict[str, Any] | None = None,
     sandbox_type: str = "none",  # str (not None) to match argparse choices
@@ -548,6 +549,7 @@ async def run_non_interactive(
     Args:
         message: The task/message to execute.
         assistant_id: Agent identifier for memory storage.
+        harness: Agent harness runtime (`deepagents` or `rlmagents`).
         model_name: Optional model name to use.
         model_params: Extra kwargs from `--model-params` to pass to the model.
 
@@ -638,6 +640,7 @@ async def run_non_interactive(
             agent, composite_backend = create_cli_agent(
                 model=model,
                 assistant_id=assistant_id,
+                harness=harness,
                 tools=tools,
                 sandbox=sandbox_backend,
                 sandbox_type=sandbox_type if sandbox_type != "none" else None,

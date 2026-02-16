@@ -4,8 +4,8 @@ import json
 import os
 import re
 import subprocess
-from fnmatch import fnmatch
 from datetime import datetime
+from fnmatch import fnmatch
 from pathlib import Path
 
 try:

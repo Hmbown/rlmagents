@@ -1559,3 +1559,26 @@ recent = "openai:gpt-5.2"
             result = _get_default_model_spec()
 
         assert result == "anthropic:claude-sonnet-4-5-20250929"
+
+    def test_deepseek_env_used_when_no_other_credentials(self, tmp_path):
+        """Falls back to DeepSeek when only DEEPSEEK_API_KEY is present."""
+        from deepagents_cli.config import _get_default_model_spec, settings
+
+        config_path = tmp_path / "config.toml"
+        config_path.write_text("")
+
+        with (
+            patch.object(model_config, "DEFAULT_CONFIG_PATH", config_path),
+            patch.object(settings, "openai_api_key", None),
+            patch.object(settings, "anthropic_api_key", None),
+            patch.object(settings, "google_api_key", None),
+            patch.object(settings, "google_cloud_project", None),
+            patch.dict(
+                "os.environ",
+                {"DEEPSEEK_API_KEY": "test-key"},
+                clear=False,
+            ),
+        ):
+            result = _get_default_model_spec()
+
+        assert result == "deepseek:deepseek-chat"

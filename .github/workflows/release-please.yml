@@ -7,7 +7,7 @@
 # GitHub releases are created by release.yml after all checks pass,
 # not by release-please directly (skip-github-release: true in config).
 
-name: Release Please (CLI ONLY)
+name: Release Please
 
 on:
   push:
@@ -21,7 +21,8 @@ jobs:
       contents: write
       pull-requests: write
     outputs:
-      cli-release: ${{ steps.check-cli-release.outputs.is-release }}
+      cli-release: ${{ steps.check-releases.outputs.cli-release }}
+      rlmagents-release: ${{ steps.check-releases.outputs.rlmagents-release }}
       pr: ${{ steps.release.outputs.pr }}
     steps:
       - uses: googleapis/release-please-action@v4
@@ -30,20 +31,30 @@ jobs:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
-      # Detect CLI release by checking if this commit updated the CLI's CHANGELOG.md
-      # release-please ALWAYS updates CHANGELOG.md when merging a release PR
+      # Detect package releases by checking which package CHANGELOG.md files
+      # changed in this merge commit. release-please always updates CHANGELOG.md
+      # when merging a release PR.
       - uses: actions/checkout@v6
         with:
           fetch-depth: 2
 
-      - name: Check if CLI release PR was merged
-        id: check-cli-release
+      - name: Check which release PR was merged
+        id: check-releases
         run: |
-          if git diff --name-only HEAD~1 HEAD | grep -q "^libs/cli/CHANGELOG.md$"; then
-            echo "is-release=true" >> $GITHUB_OUTPUT
-            echo "CLI CHANGELOG.md was modified - this is a release commit"
+          changed_files="$(git diff --name-only HEAD~1 HEAD)"
+
+          if echo "$changed_files" | grep -q "^libs/cli/CHANGELOG.md$"; then
+            echo "cli-release=true" >> $GITHUB_OUTPUT
+            echo "CLI CHANGELOG.md was modified - this is a CLI release commit"
           else
-            echo "is-release=false" >> $GITHUB_OUTPUT
+            echo "cli-release=false" >> $GITHUB_OUTPUT
+          fi
+
+          if echo "$changed_files" | grep -q "^libs/rlmagents/CHANGELOG.md$"; then
+            echo "rlmagents-release=true" >> $GITHUB_OUTPUT
+            echo "rlmagents CHANGELOG.md was modified - this is an rlmagents release commit"
+          else
+            echo "rlmagents-release=false" >> $GITHUB_OUTPUT
           fi
 
   # Update uv.lock files when release-please creates/updates a PR
@@ -95,6 +106,20 @@ jobs:
     uses: ./.github/workflows/release.yml
     with:
       package: deepagents-cli
+    permissions:
+      contents: write
+      id-token: write
+      # write needed to update PR label from "autorelease: pending" to "autorelease: tagged"
+      pull-requests: write
+
+  # Trigger release workflow when rlmagents release PR is merged
+  # GitHub release is created by release.yml AFTER all checks pass
+  release-rlmagents:
+    needs: release-please
+    if: needs.release-please.outputs.rlmagents-release == 'true'
+    uses: ./.github/workflows/release.yml
+    with:
+      package: rlmagents
     permissions:
       contents: write
       id-token: write

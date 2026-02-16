@@ -285,6 +285,43 @@ class TestAgentsAliasDirectories:
         assert settings.get_project_agent_skills_dir() is None
 
 
+class TestAgentSettingsPersistence:
+    """Tests for per-agent settings stored in settings.toml."""
+
+    def test_save_and_load_agent_harness(self, tmp_path: Path) -> None:
+        """Harness selection should round-trip through settings.toml."""
+        with patch("deepagents_cli.config.Path.home", return_value=tmp_path):
+            cfg = Settings.from_environment(start_path=tmp_path)
+
+            saved = cfg.save_agent_harness("agent", "rlmagents")
+            assert saved is True
+            assert cfg.get_agent_harness("agent") == "rlmagents"
+
+            settings_path = cfg.get_agent_settings_path("agent")
+            assert settings_path.exists()
+            assert 'harness = "rlmagents"' in settings_path.read_text(encoding="utf-8")
+
+    def test_invalid_harness_value_raises(self, tmp_path: Path) -> None:
+        """Unsupported harness values should raise ValueError."""
+        with patch("deepagents_cli.config.Path.home", return_value=tmp_path):
+            cfg = Settings.from_environment(start_path=tmp_path)
+            with pytest.raises(ValueError, match="Invalid harness"):
+                cfg.save_agent_harness("agent", "unsupported")
+
+    def test_invalid_agent_settings_toml_returns_empty_dict(
+        self, tmp_path: Path
+    ) -> None:
+        """Malformed settings.toml should be ignored safely."""
+        with patch("deepagents_cli.config.Path.home", return_value=tmp_path):
+            cfg = Settings.from_environment(start_path=tmp_path)
+            settings_path = cfg.ensure_agent_dir("agent") / "settings.toml"
+            settings_path.write_text("harness =", encoding="utf-8")
+
+            loaded = cfg.load_agent_settings("agent")
+            assert loaded == {}
+            assert cfg.get_agent_harness("agent") is None
+
+
 class TestCreateModelProfileExtraction:
     """Tests for profile extraction in create_model.
 
@@ -828,6 +865,38 @@ base_url = "https://wrong-url.com"
         # Explicit base_url field should win over kwargs.base_url
         assert kwargs["base_url"] == "https://correct-url.com"
 
+    def test_deepseek_defaults_when_no_config(self, tmp_path: Path) -> None:
+        """DeepSeek uses environment/default fallbacks without config entries."""
+        temp_config = tmp_path / "config.toml"
+        temp_config.write_text("")
+        with (
+            patch.object(model_config, "DEFAULT_CONFIG_PATH", temp_config),
+            patch.dict("os.environ", {"DEEPSEEK_API_KEY": "ds-key"}, clear=False),
+        ):
+            kwargs = _get_provider_kwargs("deepseek")
+
+        assert kwargs["base_url"] == "https://api.deepseek.com"
+        assert kwargs["api_key"] == "ds-key"
+
+    def test_deepseek_base_url_from_env(self, tmp_path: Path) -> None:
+        """DEEPSEEK_BASE_URL overrides the built-in default base URL."""
+        temp_config = tmp_path / "config.toml"
+        temp_config.write_text("")
+        with (
+            patch.object(model_config, "DEFAULT_CONFIG_PATH", temp_config),
+            patch.dict(
+                "os.environ",
+                {
+                    "DEEPSEEK_API_KEY": "ds-key",
+                    "DEEPSEEK_BASE_URL": "https://api.deepseek.com/v1",
+                },
+                clear=False,
+            ),
+        ):
+            kwargs = _get_provider_kwargs("deepseek")
+
+        assert kwargs["base_url"] == "https://api.deepseek.com/v1"
+
 
 class TestCreateModelFromClass:
     """Tests for _create_model_from_class() custom class factory."""
@@ -1128,6 +1197,8 @@ class TestDetectProvider:
             ("o4-mini", "openai"),
             ("claude-sonnet-4-5", "anthropic"),
             ("claude-opus-4-5", "anthropic"),
+            ("deepseek-chat", "deepseek"),
+            ("deepseek-reasoner", "deepseek"),
             ("gemini-3-pro-preview", "google_genai"),
             ("llama3", None),
             ("mistral-large", None),
@@ -1183,5 +1254,6 @@ class TestDetectProvider:
         try:
             assert detect_provider("Claude-Sonnet-4-5") == "anthropic"
             assert detect_provider("GPT-4o") == "openai"
+            assert detect_provider("DEEPSEEK-CHAT") == "deepseek"
         finally:
             settings.anthropic_api_key = None

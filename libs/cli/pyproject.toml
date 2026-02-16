@@ -27,6 +27,7 @@ classifiers = [
 dependencies = [
     # Framework
     "deepagents==0.4.1",
+    "rlmagents==0.1.0",
     "langchain>=1.2.10,<2.0.0",
     "langgraph-checkpoint-sqlite>=3.0.0,<4.0.0",
 
@@ -121,9 +122,10 @@ packages = ["deepagents_cli"]
 
 [tool.uv.sources]
 deepagents = { path = "../deepagents", editable = true }
+rlmagents = { path = "../rlmagents", editable = true }
 
 [tool.ty.environment]
-extra-paths = ["../deepagents"]
+extra-paths = ["../deepagents", "../rlmagents"]
 
 [tool.ty.rules]
 # https://docs.astral.sh/ty/rules/

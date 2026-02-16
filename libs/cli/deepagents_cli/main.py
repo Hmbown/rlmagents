@@ -35,6 +35,7 @@ logger = logging.getLogger(__name__)
 # Now safe to import agent (which imports LangChain modules)
 from deepagents_cli.agent import (
     DEFAULT_AGENT_NAME,
+    HarnessType,
     create_cli_agent,
     list_agents,
     reset_agent,
@@ -98,6 +99,30 @@ def check_cli_dependencies() -> None:
         print("\nOr install all dependencies:")
         print("  pip install 'deepagents[cli]'")
         sys.exit(1)
+
+
+def _resolve_harness(
+    assistant_id: str,
+    cli_harness: HarnessType | None,
+) -> HarnessType:
+    """Resolve harness selection for an agent.
+
+    Precedence order:
+    1. CLI flag (`--harness`)
+    2. Agent-level persisted setting (`~/.deepagents/<agent>/settings.toml`)
+    3. Default (`deepagents`)
+
+    Returns:
+        Resolved harness value.
+    """
+    if cli_harness is not None:
+        settings.save_agent_harness(assistant_id, cli_harness)
+        return cli_harness
+
+    persisted_harness = settings.get_agent_harness(assistant_id)
+    if persisted_harness == "rlmagents":
+        return "rlmagents"
+    return "deepagents"
 
 
 def parse_args() -> argparse.Namespace:
@@ -249,6 +274,14 @@ def parse_args() -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "--harness",
+        choices=["deepagents", "rlmagents"],
+        default=None,
+        metavar="TYPE",
+        help="Harness to use (default: persisted per-agent setting, else deepagents).",
+    )
+
+    parser.add_argument(
         "-M",
         "--model",
         metavar="MODEL",
@@ -372,6 +405,7 @@ def parse_args() -> argparse.Namespace:
 async def run_textual_cli_async(
     assistant_id: str,
     *,
+    harness: HarnessType = "deepagents",
     auto_approve: bool = False,
     sandbox_type: str = "none",  # str (not None) to match argparse choices
     sandbox_id: str | None = None,
@@ -386,6 +420,7 @@ async def run_textual_cli_async(
 
     Args:
         assistant_id: Agent identifier for memory storage
+        harness: Agent harness runtime (`deepagents` or `rlmagents`)
         auto_approve: Whether to auto-approve tool usage
         sandbox_type: Type of sandbox
             ("none", "modal", "runloop", "daytona", "langsmith")
@@ -454,6 +489,7 @@ async def run_textual_cli_async(
             agent, composite_backend = create_cli_agent(
                 model=model,
                 assistant_id=assistant_id,
+                harness=harness,
                 tools=tools,
                 sandbox=sandbox_backend,
                 sandbox_type=sandbox_type if sandbox_type != "none" else None,
@@ -472,6 +508,7 @@ async def run_textual_cli_async(
             return_code = await run_textual_app(
                 agent=agent,
                 assistant_id=assistant_id,
+                harness=harness,
                 backend=composite_backend,
                 auto_approve=auto_approve,
                 cwd=Path.cwd(),
@@ -740,10 +777,15 @@ def cli_main() -> None:
             # Non-interactive mode - execute single task and exit
             from deepagents_cli.non_interactive import run_non_interactive
 
+            resolved_harness = _resolve_harness(
+                args.agent,
+                getattr(args, "harness", None),
+            )
             exit_code = asyncio.run(
                 run_non_interactive(
                     message=args.non_interactive_message,
                     assistant_id=args.agent,
+                    harness=resolved_harness,
                     model_name=getattr(args, "model", None),
                     model_params=model_params,
                     sandbox_type=args.sandbox,
@@ -819,12 +861,18 @@ def cli_main() -> None:
             if thread_id is None:
                 thread_id = generate_thread_id()
 
+            resolved_harness = _resolve_harness(
+                args.agent,
+                getattr(args, "harness", None),
+            )
+
             # Run Textual CLI
             return_code = 0
             try:
                 return_code = asyncio.run(
                     run_textual_cli_async(
                         assistant_id=args.agent,
+                        harness=resolved_harness,
                         auto_approve=args.auto_approve,
                         sandbox_type=args.sandbox,
                         sandbox_id=args.sandbox_id,

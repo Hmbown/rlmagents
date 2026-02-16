@@ -507,3 +507,70 @@ class TestCreateCliAgentSkillsSources:
         assert sources[0] == str(built_in_dir)
         # User skills dir should follow
         assert sources[1] == str(skills_dir)
+
+
+class TestCreateCliAgentHarnessDispatch:
+    """Test harness selection in create_cli_agent."""
+
+    def _make_settings_mock(self, tmp_path: Path) -> Mock:
+        mock_settings = Mock()
+        mock_settings.get_user_agents_dir.return_value = tmp_path / "agents"
+        mock_settings.get_project_agents_dir.return_value = None
+        mock_settings.model_name = None
+        mock_settings.model_provider = None
+        mock_settings.model_context_limit = None
+        mock_settings.project_root = None
+        return mock_settings
+
+    def test_deepagents_harness_uses_create_deep_agent(self, tmp_path: Path) -> None:
+        """`harness='deepagents'` should dispatch to create_deep_agent."""
+        mock_settings = self._make_settings_mock(tmp_path)
+        deep_agent = Mock()
+        deep_agent.with_config.return_value = deep_agent
+        rlm_agent = Mock()
+        rlm_agent.with_config.return_value = rlm_agent
+
+        with (
+            patch("deepagents_cli.agent.settings", mock_settings),
+            patch("deepagents_cli.agent.list_subagents", return_value=[]),
+            patch("deepagents_cli.agent.create_deep_agent", return_value=deep_agent),
+            patch("deepagents_cli.agent.create_rlm_agent", return_value=rlm_agent),
+        ):
+            create_cli_agent(
+                model="fake-model",
+                assistant_id="agent",
+                harness="deepagents",
+                enable_memory=False,
+                enable_skills=False,
+                enable_shell=False,
+            )
+
+        # Exact positional/keyword signature is tested elsewhere; only dispatch here
+        assert deep_agent.with_config.called
+        assert not rlm_agent.with_config.called
+
+    def test_rlmagents_harness_uses_create_rlm_agent(self, tmp_path: Path) -> None:
+        """`harness='rlmagents'` should dispatch to create_rlm_agent."""
+        mock_settings = self._make_settings_mock(tmp_path)
+        deep_agent = Mock()
+        deep_agent.with_config.return_value = deep_agent
+        rlm_agent = Mock()
+        rlm_agent.with_config.return_value = rlm_agent
+
+        with (
+            patch("deepagents_cli.agent.settings", mock_settings),
+            patch("deepagents_cli.agent.list_subagents", return_value=[]),
+            patch("deepagents_cli.agent.create_deep_agent", return_value=deep_agent),
+            patch("deepagents_cli.agent.create_rlm_agent", return_value=rlm_agent),
+        ):
+            create_cli_agent(
+                model="fake-model",
+                assistant_id="agent",
+                harness="rlmagents",
+                enable_memory=False,
+                enable_skills=False,
+                enable_shell=False,
+            )
+
+        assert rlm_agent.with_config.called
+        assert not deep_agent.with_config.called

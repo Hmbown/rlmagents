@@ -63,6 +63,17 @@
         "deepagents_cli/_version.py"
       ],
       "changelog-path": "CHANGELOG.md"
+    },
+    "libs/rlmagents": {
+      "release-type": "python",
+      "package-name": "rlmagents",
+      "component": "rlmagents",
+      "bump-minor-pre-major": true,
+      "bump-patch-for-minor-pre-major": true,
+      "extra-files": [
+        "pyproject.toml"
+      ],
+      "changelog-path": "CHANGELOG.md"
     }
   },
   "tag-separator": "==",

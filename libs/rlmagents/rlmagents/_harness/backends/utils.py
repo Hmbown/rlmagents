@@ -6,8 +6,8 @@ enable composition without fragile string parsing.
 """
 
 import re
-from fnmatch import fnmatch
 from datetime import UTC, datetime
+from fnmatch import fnmatch
 from pathlib import Path
 from typing import Any, Literal
 

@@ -277,6 +277,7 @@ def show_help() -> None:
         "  -r, --resume [ID]          Resume thread: -r for most recent, -r ID for specific"  # noqa: E501
     )
     console.print("  -a, --agent NAME           Agent to use (e.g., coder, researcher)")
+    console.print("  --harness TYPE             Agent harness: deepagents or rlmagents")
     console.print("  -M, --model MODEL          Model to use (e.g., gpt-4o)")
     console.print("  -m, --message TEXT         Initial prompt to auto-submit on start")
     console.print(

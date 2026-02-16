@@ -44,21 +44,21 @@ from rlmagents.middleware.rlm import RLMMiddleware
 
 if TYPE_CHECKING:
     from rlmagents._harness.backends.protocol import BackendFactory, BackendProtocol
-    from rlmagents._harness.middleware.subagents import CompiledSubAgent, SubAgent
+    from rlmagents._harness.subagents import CompiledSubAgent, SubAgent
 
 # Import incorporated harness
 from rlmagents._harness.backends import StateBackend
-from rlmagents._harness.middleware.filesystem import FilesystemMiddleware
-from rlmagents._harness.middleware.memory import MemoryMiddleware
-from rlmagents._harness.middleware.patch_tool_calls import PatchToolCallsMiddleware
-from rlmagents._harness.middleware.skills import SkillsMiddleware
-from rlmagents._harness.middleware.subagents import (
+from rlmagents._harness.filesystem import FilesystemMiddleware
+from rlmagents._harness.memory import MemoryMiddleware
+from rlmagents._harness.patch_tool_calls import PatchToolCallsMiddleware
+from rlmagents._harness.skills import SkillsMiddleware
+from rlmagents._harness.subagents import (
     GENERAL_PURPOSE_SUBAGENT,
     CompiledSubAgent,
     SubAgent,
     SubAgentMiddleware,
 )
-from rlmagents._harness.middleware.summarization import (
+from rlmagents._harness.summarization import (
     SummarizationMiddleware,
     _compute_summarization_defaults,
 )
@@ -78,6 +78,38 @@ _CODING_RESPONSE_FIELD_DESCRIPTIONS = {
     "risks": "Caveats and likely regressions.",
     "confidence": "Confidence level from 0 to 1.",
 }
+
+
+def _is_context_size(value: object) -> bool:
+    return (
+        isinstance(value, tuple)
+        and len(value) == 2
+        and isinstance(value[0], str)
+        and isinstance(value[1], (int, float))
+    )
+
+
+def _normalize_summarization_defaults(defaults: dict[str, Any]) -> dict[str, Any]:
+    """Normalize summarization defaults to valid langchain middleware settings."""
+    trigger_value = defaults.get("trigger")
+    keep_value = defaults.get("keep")
+
+    trigger: tuple[str, int | float] = (
+        trigger_value if _is_context_size(trigger_value) else ("messages", 20)
+    )
+    keep: tuple[str, int | float] = (
+        keep_value if _is_context_size(keep_value) else ("messages", 6)
+    )
+
+    truncate_args = defaults.get("truncate_args_settings")
+    if truncate_args is not None and not isinstance(truncate_args, dict):
+        truncate_args = None
+
+    return {
+        "trigger": trigger,
+        "keep": keep,
+        "truncate_args_settings": truncate_args,
+    }
 
 
 def _get_langchain_version() -> str:
@@ -303,7 +335,9 @@ def create_rlm_agent(
             model = init_chat_model(model)
 
     # Compute summarization defaults
-    summarization_defaults = _compute_summarization_defaults(model)
+    summarization_defaults = _normalize_summarization_defaults(
+        _compute_summarization_defaults(model)
+    )
 
     # Resolve backend
     resolved_backend = backend if backend is not None else StateBackend
@@ -349,7 +383,9 @@ def create_rlm_agent(
             if isinstance(subagent_model, str):
                 subagent_model = init_chat_model(subagent_model)
 
-            subagent_summarization_defaults = _compute_summarization_defaults(subagent_model)
+            subagent_summarization_defaults = _normalize_summarization_defaults(
+                _compute_summarization_defaults(subagent_model)
+            )
             subagent_middleware: list[AgentMiddleware] = [
                 TodoListMiddleware(),
             ]

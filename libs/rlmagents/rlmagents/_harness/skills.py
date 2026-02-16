@@ -99,7 +99,7 @@ import yaml
 from langchain.agents.middleware.types import PrivateStateAttr
 
 if TYPE_CHECKING:
-    from deepagents.backends.protocol import BACKEND_TYPES, BackendProtocol
+    from rlmagents._harness.backends.protocol import BACKEND_TYPES, BackendProtocol
 
 from collections.abc import Awaitable, Callable
 from typing import NotRequired, TypedDict
@@ -114,7 +114,7 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.prebuilt import ToolRuntime
 from langgraph.runtime import Runtime
 
-from deepagents.middleware._utils import append_to_system_message
+from rlmagents._harness._utils import append_to_system_message
 
 logger = logging.getLogger(__name__)
 

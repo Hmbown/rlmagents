@@ -9,11 +9,13 @@ from __future__ import annotations
 
 import os
 import subprocess
+import time
 import uuid
+from hashlib import sha256
 from typing import TYPE_CHECKING
 
-from deepagents.backends.filesystem import FilesystemBackend
-from deepagents.backends.protocol import ExecuteResponse, SandboxBackendProtocol
+from rlmagents._harness.backends.filesystem import FilesystemBackend
+from rlmagents._harness.backends.protocol import ExecuteResponse, SandboxBackendProtocol
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -242,10 +244,14 @@ class LocalShellBackend(FilesystemBackend, SandboxBackendProtocol):
             return ExecuteResponse(
                 output="Error: Command must be a non-empty string.",
                 exit_code=1,
+                elapsed_ms=0,
+                cwd_hint=str(self.cwd),
+                stderr_digest=None,
                 truncated=False,
             )
 
         try:
+            started = time.monotonic()
             result = subprocess.run(  # noqa: S602
                 command,
                 check=False,
@@ -261,10 +267,11 @@ class LocalShellBackend(FilesystemBackend, SandboxBackendProtocol):
             # Prefix each stderr line with [stderr] for clear attribution.
             # Example: "hello\n[stderr] error: file not found"  # noqa: ERA001
             output_parts = []
+            stderr_text = result.stderr or ""
             if result.stdout:
                 output_parts.append(result.stdout)
-            if result.stderr:
-                stderr_lines = result.stderr.strip().split("\n")
+            if stderr_text:
+                stderr_lines = stderr_text.strip().split("\n")
                 output_parts.extend(f"[stderr] {line}" for line in stderr_lines)
 
             output = "\n".join(output_parts) if output_parts else "<no output>"
@@ -280,9 +287,19 @@ class LocalShellBackend(FilesystemBackend, SandboxBackendProtocol):
             if result.returncode != 0:
                 output = f"{output.rstrip()}\n\nExit code: {result.returncode}"
 
+            elapsed_ms = int((time.monotonic() - started) * 1000)
+            stderr_digest = (
+                sha256(stderr_text.encode("utf-8", errors="ignore")).hexdigest()[:12]
+                if stderr_text
+                else None
+            )
+
             return ExecuteResponse(
                 output=output,
                 exit_code=result.returncode,
+                elapsed_ms=elapsed_ms,
+                cwd_hint=str(self.cwd),
+                stderr_digest=stderr_digest,
                 truncated=truncated,
             )
 
@@ -290,6 +307,9 @@ class LocalShellBackend(FilesystemBackend, SandboxBackendProtocol):
             return ExecuteResponse(
                 output=f"Error: Command timed out after {self._timeout:.1f} seconds.",
                 exit_code=124,  # Standard timeout exit code
+                elapsed_ms=int(self._timeout * 1000),
+                cwd_hint=str(self.cwd),
+                stderr_digest=None,
                 truncated=False,
             )
         except Exception as e:  # noqa: BLE001
@@ -298,6 +318,9 @@ class LocalShellBackend(FilesystemBackend, SandboxBackendProtocol):
             return ExecuteResponse(
                 output=f"Error executing command: {e}",
                 exit_code=1,
+                elapsed_ms=None,
+                cwd_hint=str(self.cwd),
+                stderr_digest=None,
                 truncated=False,
             )
 

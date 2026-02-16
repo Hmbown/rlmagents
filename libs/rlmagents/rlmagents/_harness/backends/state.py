@@ -2,7 +2,7 @@
 
 from typing import TYPE_CHECKING
 
-from deepagents.backends.protocol import (
+from rlmagents._harness.backends.protocol import (
     BackendProtocol,
     EditResult,
     FileDownloadResponse,
@@ -11,7 +11,7 @@ from deepagents.backends.protocol import (
     GrepMatch,
     WriteResult,
 )
-from deepagents.backends.utils import (
+from rlmagents._harness.backends.utils import (
     _glob_search_files,
     create_file_data,
     file_data_to_string,
@@ -133,7 +133,9 @@ class StateBackend(BackendProtocol):
         files = self.runtime.state.get("files", {})
 
         if file_path in files:
-            return WriteResult(error=f"Cannot write to {file_path} because it already exists. Read and then make an edit, or write to a new path.")
+            return WriteResult(
+                error=f"Cannot write to {file_path} because it already exists. Read and then make an edit, or write to a new path."
+            )
 
         new_file_data = create_file_data(content)
         return WriteResult(path=file_path, files_update={file_path: new_file_data})
@@ -162,7 +164,9 @@ class StateBackend(BackendProtocol):
 
         new_content, occurrences = result
         new_file_data = update_file_data(file_data, new_content)
-        return EditResult(path=file_path, files_update={file_path: new_file_data}, occurrences=int(occurrences))
+        return EditResult(
+            path=file_path, files_update={file_path: new_file_data}, occurrences=int(occurrences)
+        )
 
     def grep_raw(
         self,
@@ -224,7 +228,9 @@ class StateBackend(BackendProtocol):
             file_data = state_files.get(path)
 
             if file_data is None:
-                responses.append(FileDownloadResponse(path=path, content=None, error="file_not_found"))
+                responses.append(
+                    FileDownloadResponse(path=path, content=None, error="file_not_found")
+                )
                 continue
 
             # Convert file data to bytes

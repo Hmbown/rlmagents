@@ -1,11 +1,11 @@
 """Memory backends for pluggable file storage."""
 
-from deepagents.backends.composite import CompositeBackend
-from deepagents.backends.filesystem import FilesystemBackend
-from deepagents.backends.local_shell import LocalShellBackend
-from deepagents.backends.protocol import BackendProtocol
-from deepagents.backends.state import StateBackend
-from deepagents.backends.store import (
+from rlmagents._harness.backends.composite import CompositeBackend
+from rlmagents._harness.backends.filesystem import FilesystemBackend
+from rlmagents._harness.backends.local_shell import LocalShellBackend
+from rlmagents._harness.backends.protocol import BackendProtocol
+from rlmagents._harness.backends.state import StateBackend
+from rlmagents._harness.backends.store import (
     BackendContext,
     NamespaceFactory,
     StoreBackend,

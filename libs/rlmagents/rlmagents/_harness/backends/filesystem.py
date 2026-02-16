@@ -4,12 +4,24 @@ import json
 import os
 import re
 import subprocess
+from fnmatch import fnmatch
 from datetime import datetime
 from pathlib import Path
 
-import wcmatch.glob as wcglob
+try:
+    import wcmatch.glob as wcglob
+except ModuleNotFoundError:  # pragma: no cover
+    class _FallbackWCGlob:
+        BRACE = 0
 
-from deepagents.backends.protocol import (
+        @staticmethod
+        def globmatch(path: str, pattern: str, flags: int = 0) -> bool:
+            del flags
+            return fnmatch(path, pattern)
+
+    wcglob = _FallbackWCGlob()
+
+from rlmagents._harness.backends.protocol import (
     BackendProtocol,
     EditResult,
     FileDownloadResponse,
@@ -18,7 +30,7 @@ from deepagents.backends.protocol import (
     GrepMatch,
     WriteResult,
 )
-from deepagents.backends.utils import (
+from rlmagents._harness.backends.utils import (
     check_empty_content,
     format_content_with_line_numbers,
     perform_string_replacement,
@@ -313,7 +325,9 @@ class FilesystemBackend(BackendProtocol):
         resolved_path = self._resolve_path(file_path)
 
         if resolved_path.exists():
-            return WriteResult(error=f"Cannot write to {file_path} because it already exists. Read and then make an edit, or write to a new path.")
+            return WriteResult(
+                error=f"Cannot write to {file_path} because it already exists. Read and then make an edit, or write to a new path."
+            )
 
         try:
             # Create parent directories if needed
@@ -421,7 +435,9 @@ class FilesystemBackend(BackendProtocol):
                 matches.append({"path": fpath, "line": int(line_num), "text": line_text})
         return matches
 
-    def _ripgrep_search(self, pattern: str, base_full: Path, include_glob: str | None) -> dict[str, list[tuple[int, str]]] | None:
+    def _ripgrep_search(
+        self, pattern: str, base_full: Path, include_glob: str | None
+    ) -> dict[str, list[tuple[int, str]]] | None:
         """Search using ripgrep with fixed-string (literal) mode.
 
         Args:
@@ -477,7 +493,9 @@ class FilesystemBackend(BackendProtocol):
 
         return results
 
-    def _python_search(self, pattern: str, base_full: Path, include_glob: str | None) -> dict[str, list[tuple[int, str]]]:
+    def _python_search(
+        self, pattern: str, base_full: Path, include_glob: str | None
+    ) -> dict[str, list[tuple[int, str]]]:
         """Fallback search using Python when ripgrep is unavailable.
 
         Recursively searches files, respecting `max_file_size_bytes` limit.
@@ -665,12 +683,20 @@ class FilesystemBackend(BackendProtocol):
                     content = f.read()
                 responses.append(FileDownloadResponse(path=path, content=content, error=None))
             except FileNotFoundError:
-                responses.append(FileDownloadResponse(path=path, content=None, error="file_not_found"))
+                responses.append(
+                    FileDownloadResponse(path=path, content=None, error="file_not_found")
+                )
             except PermissionError:
-                responses.append(FileDownloadResponse(path=path, content=None, error="permission_denied"))
+                responses.append(
+                    FileDownloadResponse(path=path, content=None, error="permission_denied")
+                )
             except IsADirectoryError:
-                responses.append(FileDownloadResponse(path=path, content=None, error="is_directory"))
+                responses.append(
+                    FileDownloadResponse(path=path, content=None, error="is_directory")
+                )
             except ValueError:
-                responses.append(FileDownloadResponse(path=path, content=None, error="invalid_path"))
+                responses.append(
+                    FileDownloadResponse(path=path, content=None, error="invalid_path")
+                )
             # Let other errors propagate
         return responses

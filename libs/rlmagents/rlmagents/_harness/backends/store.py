@@ -10,7 +10,7 @@ from langgraph.config import get_config
 from langgraph.store.base import BaseStore, Item
 from langgraph.typing import ContextT, StateT
 
-from deepagents.backends.protocol import (
+from rlmagents._harness.backends.protocol import (
     BackendProtocol,
     EditResult,
     FileDownloadResponse,
@@ -19,7 +19,7 @@ from deepagents.backends.protocol import (
     GrepMatch,
     WriteResult,
 )
-from deepagents.backends.utils import (
+from rlmagents._harness.backends.utils import (
     _glob_search_files,
     create_file_data,
     file_data_to_string,

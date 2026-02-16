@@ -2,6 +2,7 @@
 # ruff: noqa: E501
 
 import base64
+import json
 import os
 import re
 from collections.abc import Awaitable, Callable, Sequence
@@ -22,22 +23,22 @@ from langchain_core.tools import BaseTool, StructuredTool
 from langgraph.types import Command
 from typing_extensions import TypedDict
 
-from deepagents.backends import StateBackend
-from deepagents.backends.composite import CompositeBackend
-from deepagents.backends.protocol import (
+from rlmagents._harness._utils import append_to_system_message
+from rlmagents._harness.backends import StateBackend
+from rlmagents._harness.backends.composite import CompositeBackend
+from rlmagents._harness.backends.protocol import (
     BACKEND_TYPES as BACKEND_TYPES,  # Re-export type here for backwards compatibility
     BackendProtocol,
     EditResult,
     SandboxBackendProtocol,
     WriteResult,
 )
-from deepagents.backends.utils import (
+from rlmagents._harness.backends.utils import (
     format_content_with_line_numbers,
     format_grep_matches,
     sanitize_tool_call_id,
     truncate_if_too_long,
 )
-from deepagents.middleware._utils import append_to_system_message
 
 EMPTY_CONTENT_WARNING = "System reminder: File exists but has empty contents"
 LINE_NUMBER_WIDTH = 6
@@ -67,6 +68,25 @@ READ_FILE_TRUNCATION_MSG = (
 # Using 4 chars per token as a conservative approximation (actual ratio varies by content)
 # This errs on the high side to avoid premature eviction of content that might fit
 NUM_CHARS_PER_TOKEN = 4
+MAX_TRACKED_READS = 64
+MAX_TRACKED_READ_CHARS = 200_000
+
+_DESTRUCTIVE_COMMAND_PATTERNS = (
+    re.compile(r"\brm\s+-rf\s+/"),
+    re.compile(r"\bmkfs(\.[a-z0-9]+)?\b"),
+    re.compile(r"\bdd\s+if="),
+    re.compile(r":\(\)\s*\{\s*:\|\:&\s*\};:"),
+    re.compile(r"\bshutdown\b"),
+    re.compile(r"\breboot\b"),
+    re.compile(r"\bgit\s+reset\s+--hard\b"),
+)
+
+_RISKY_COMMAND_PATTERNS = (
+    re.compile(r"\bsudo\b"),
+    re.compile(r"\bcurl\b.+\|\s*(bash|sh)\b"),
+    re.compile(r"\bwget\b.+\|\s*(bash|sh)\b"),
+    re.compile(r"\bchmod\s+-R\s+777\b"),
+)
 
 
 class FileData(TypedDict):
@@ -82,7 +102,9 @@ class FileData(TypedDict):
     """ISO 8601 timestamp of last modification."""
 
 
-def _file_data_reducer(left: dict[str, FileData] | None, right: dict[str, FileData | None]) -> dict[str, FileData]:
+def _file_data_reducer(
+    left: dict[str, FileData] | None, right: dict[str, FileData | None]
+) -> dict[str, FileData]:
     """Merge file updates with support for deletions.
 
     This reducer enables file deletion by treating `None` values in the right
@@ -168,7 +190,9 @@ def _validate_path(path: str, *, allowed_prefixes: Sequence[str] | None = None) 
     if not normalized.startswith("/"):
         normalized = f"/{normalized}"
 
-    if allowed_prefixes is not None and not any(normalized.startswith(prefix) for prefix in allowed_prefixes):
+    if allowed_prefixes is not None and not any(
+        normalized.startswith(prefix) for prefix in allowed_prefixes
+    ):
         msg = f"Path must start with one of {allowed_prefixes}: {path}"
         raise ValueError(msg)
 
@@ -434,8 +458,8 @@ class FilesystemMiddleware(AgentMiddleware):
 
     Example:
         ```python
-        from deepagents.middleware.filesystem import FilesystemMiddleware
-        from deepagents.backends import StateBackend, StoreBackend, CompositeBackend
+        from rlmagents._harness.filesystem import FilesystemMiddleware
+        from rlmagents._harness.backends import StateBackend, StoreBackend, CompositeBackend
         from langchain.agents import create_agent
 
         # Ephemeral storage only (default, no execution)
@@ -479,6 +503,8 @@ class FilesystemMiddleware(AgentMiddleware):
         self._custom_system_prompt = system_prompt
         self._custom_tool_descriptions = custom_tool_descriptions or {}
         self._tool_token_limit_before_evict = tool_token_limit_before_evict
+        self._recent_reads: dict[str, str] = {}
+        self._read_order: list[str] = []
 
         self.tools = [
             self._create_ls_tool(),
@@ -503,13 +529,122 @@ class FilesystemMiddleware(AgentMiddleware):
             return self.backend(runtime)
         return self.backend
 
+    def _remember_read(self, file_path: str, content: str) -> None:
+        """Track recent read content for enforcing contextual edits."""
+        self._recent_reads[file_path] = content[:MAX_TRACKED_READ_CHARS]
+        if file_path in self._read_order:
+            self._read_order.remove(file_path)
+        self._read_order.append(file_path)
+        while len(self._read_order) > MAX_TRACKED_READS:
+            expired = self._read_order.pop(0)
+            self._recent_reads.pop(expired, None)
+
+    def _validate_edit_context(
+        self,
+        *,
+        file_path: str,
+        old_string: str,
+        context_snippet: str | None,
+        line_start: int | None,
+        line_end: int | None,
+    ) -> str | None:
+        """Validate that an edit has enough context to avoid blind patching."""
+        cached = self._recent_reads.get(file_path)
+        if not cached:
+            return (
+                "Error: Refusing blind edit. Read the file first in this session before editing."
+            )
+
+        has_snippet = bool(context_snippet and context_snippet.strip())
+        has_line_range = (
+            line_start is not None
+            and line_end is not None
+            and line_start >= 1
+            and line_end >= line_start
+        )
+        if not has_snippet and not has_line_range:
+            return (
+                "Error: Refusing blind edit. Provide either `context_snippet` or "
+                "`line_start` and `line_end`."
+            )
+
+        if has_snippet and context_snippet and context_snippet not in cached:
+            return (
+                "Error: Provided context_snippet was not found in recent read output for "
+                f"'{file_path}'. Re-read the file and pass an exact snippet."
+            )
+
+        if old_string not in cached:
+            return (
+                "Error: Refusing edit because old_string is not present in the recent read "
+                f"output for '{file_path}'. Re-read and verify target text."
+            )
+        return None
+
+    def _command_guardrail(self, command: str) -> tuple[bool, str | None]:
+        """Classify command risk and return (blocked, warning_or_error)."""
+        for pattern in _DESTRUCTIVE_COMMAND_PATTERNS:
+            if pattern.search(command):
+                return (
+                    True,
+                    "Error: Potentially destructive command blocked by guardrail. "
+                    "Revise the command to a safer equivalent.",
+                )
+        for pattern in _RISKY_COMMAND_PATTERNS:
+            if pattern.search(command):
+                return (
+                    False,
+                    "Warning: command appears risky. Confirm intent and scope before reuse.",
+                )
+        return (False, None)
+
+    def _verification_mode(self, command: str) -> str | None:
+        """Identify known coding-verification command patterns."""
+        normalized = " ".join(command.strip().split())
+        if normalized.startswith("uv run pytest") or normalized.startswith("pytest"):
+            return "pytest"
+        if normalized.startswith("uv run ruff") or normalized.startswith("ruff"):
+            return "ruff"
+        if normalized.startswith("uv run"):
+            return "uv_run"
+        return None
+
+    def _format_execute_result(self, command: str, result: object, warning: str | None) -> str:
+        """Render execute output with structured metadata for machine checks."""
+        output = getattr(result, "output", "")
+        exit_code = getattr(result, "exit_code", None)
+        truncated = bool(getattr(result, "truncated", False))
+        metadata: dict[str, object] = {
+            "exit_code": exit_code,
+            "elapsed_ms": getattr(result, "elapsed_ms", None),
+            "cwd_hint": getattr(result, "cwd_hint", None),
+            "truncated": truncated,
+            "stderr_digest": getattr(result, "stderr_digest", None),
+        }
+        verification_mode = self._verification_mode(command)
+        if verification_mode is not None:
+            metadata["verification_mode"] = verification_mode
+
+        parts = [str(output)]
+        if warning:
+            parts.append(f"\n[{warning}]")
+        if exit_code is not None:
+            status = "succeeded" if exit_code == 0 else "failed"
+            parts.append(f"\n[Command {status} with exit code {exit_code}]")
+        if truncated:
+            parts.append("\n[Output was truncated due to size limits]")
+        parts.append(f"\n[execution_result] {json.dumps(metadata, sort_keys=True)}")
+        return "".join(parts)
+
     def _create_ls_tool(self) -> BaseTool:
         """Create the ls (list files) tool."""
         tool_description = self._custom_tool_descriptions.get("ls") or LIST_FILES_TOOL_DESCRIPTION
 
         def sync_ls(
             runtime: ToolRuntime[None, FilesystemState],
-            path: Annotated[str, "Absolute path to the directory to list. Must be absolute, not relative."],
+            path: Annotated[
+                str, "Absolute path to the directory to list. Must be absolute, not relative."
+            ],
         ) -> str:
             """Synchronous wrapper for ls tool."""
             resolved_backend = self._get_backend(runtime)
@@ -524,7 +659,9 @@ class FilesystemMiddleware(AgentMiddleware):
 
         async def async_ls(
             runtime: ToolRuntime[None, FilesystemState],
-            path: Annotated[str, "Absolute path to the directory to list. Must be absolute, not relative."],
+            path: Annotated[
+                str, "Absolute path to the directory to list. Must be absolute, not relative."
+            ],
         ) -> str:
             """Asynchronous wrapper for ls tool."""
             resolved_backend = self._get_backend(runtime)
@@ -546,14 +683,23 @@ class FilesystemMiddleware(AgentMiddleware):
 
     def _create_read_file_tool(self) -> BaseTool:
         """Create the read_file tool."""
-        tool_description = self._custom_tool_descriptions.get("read_file") or READ_FILE_TOOL_DESCRIPTION
+        tool_description = (
+            self._custom_tool_descriptions.get("read_file") or READ_FILE_TOOL_DESCRIPTION
+        )
         token_limit = self._tool_token_limit_before_evict
 
         def sync_read_file(
-            file_path: Annotated[str, "Absolute path to the file to read. Must be absolute, not relative."],
+            file_path: Annotated[
+                str, "Absolute path to the file to read. Must be absolute, not relative."
+            ],
             runtime: ToolRuntime[None, FilesystemState],
-            offset: Annotated[int, "Line number to start reading from (0-indexed). Use for pagination of large files."] = DEFAULT_READ_OFFSET,
-            limit: Annotated[int, "Maximum number of lines to read. Use for pagination of large files."] = DEFAULT_READ_LIMIT,
+            offset: Annotated[
+                int,
+                "Line number to start reading from (0-indexed). Use for pagination of large files.",
+            ] = DEFAULT_READ_OFFSET,
+            limit: Annotated[
+                int, "Maximum number of lines to read. Use for pagination of large files."
+            ] = DEFAULT_READ_LIMIT,
         ) -> ToolMessage | str:
             """Synchronous wrapper for read_file tool."""
             resolved_backend = self._get_backend(runtime)
@@ -595,14 +741,23 @@ class FilesystemMiddleware(AgentMiddleware):
                 max_content_length = NUM_CHARS_PER_TOKEN * token_limit - len(truncation_msg)
                 result = result[:max_content_length]
                 result += truncation_msg
+            if result and not result.startswith("Error:"):
+                self._remember_read(validated_path, result)
 
             return result
 
         async def async_read_file(
-            file_path: Annotated[str, "Absolute path to the file to read. Must be absolute, not relative."],
+            file_path: Annotated[
+                str, "Absolute path to the file to read. Must be absolute, not relative."
+            ],
             runtime: ToolRuntime[None, FilesystemState],
-            offset: Annotated[int, "Line number to start reading from (0-indexed). Use for pagination of large files."] = DEFAULT_READ_OFFSET,
-            limit: Annotated[int, "Maximum number of lines to read. Use for pagination of large files."] = DEFAULT_READ_LIMIT,
+            offset: Annotated[
+                int,
+                "Line number to start reading from (0-indexed). Use for pagination of large files.",
+            ] = DEFAULT_READ_OFFSET,
+            limit: Annotated[
+                int, "Maximum number of lines to read. Use for pagination of large files."
+            ] = DEFAULT_READ_LIMIT,
         ) -> ToolMessage | str:
             """Asynchronous wrapper for read_file tool."""
             resolved_backend = self._get_backend(runtime)
@@ -644,6 +799,8 @@ class FilesystemMiddleware(AgentMiddleware):
                 max_content_length = NUM_CHARS_PER_TOKEN * token_limit - len(truncation_msg)
                 result = result[:max_content_length]
                 result += truncation_msg
+            if result and not result.startswith("Error:"):
+                self._remember_read(validated_path, result)
 
             return result
 
@@ -656,11 +813,18 @@ class FilesystemMiddleware(AgentMiddleware):
 
     def _create_write_file_tool(self) -> BaseTool:
         """Create the write_file tool."""
-        tool_description = self._custom_tool_descriptions.get("write_file") or WRITE_FILE_TOOL_DESCRIPTION
+        tool_description = (
+            self._custom_tool_descriptions.get("write_file") or WRITE_FILE_TOOL_DESCRIPTION
+        )
 
         def sync_write_file(
-            file_path: Annotated[str, "Absolute path where the file should be created. Must be absolute, not relative."],
-            content: Annotated[str, "The text content to write to the file. This parameter is required."],
+            file_path: Annotated[
+                str,
+                "Absolute path where the file should be created. Must be absolute, not relative.",
+            ],
+            content: Annotated[
+                str, "The text content to write to the file. This parameter is required."
+            ],
             runtime: ToolRuntime[None, FilesystemState],
         ) -> Command | str:
             """Synchronous wrapper for write_file tool."""
@@ -688,8 +852,13 @@ class FilesystemMiddleware(AgentMiddleware):
             return f"Updated file {res.path}"
 
         async def async_write_file(
-            file_path: Annotated[str, "Absolute path where the file should be created. Must be absolute, not relative."],
-            content: Annotated[str, "The text content to write to the file. This parameter is required."],
+            file_path: Annotated[
+                str,
+                "Absolute path where the file should be created. Must be absolute, not relative.",
+            ],
+            content: Annotated[
+                str, "The text content to write to the file. This parameter is required."
+            ],
             runtime: ToolRuntime[None, FilesystemState],
         ) -> Command | str:
             """Asynchronous wrapper for write_file tool."""
@@ -725,15 +894,39 @@ class FilesystemMiddleware(AgentMiddleware):
 
     def _create_edit_file_tool(self) -> BaseTool:
         """Create the edit_file tool."""
-        tool_description = self._custom_tool_descriptions.get("edit_file") or EDIT_FILE_TOOL_DESCRIPTION
+        tool_description = (
+            self._custom_tool_descriptions.get("edit_file") or EDIT_FILE_TOOL_DESCRIPTION
+        )
 
         def sync_edit_file(
-            file_path: Annotated[str, "Absolute path to the file to edit. Must be absolute, not relative."],
-            old_string: Annotated[str, "The exact text to find and replace. Must be unique in the file unless replace_all is True."],
-            new_string: Annotated[str, "The text to replace old_string with. Must be different from old_string."],
+            file_path: Annotated[
+                str, "Absolute path to the file to edit. Must be absolute, not relative."
+            ],
+            old_string: Annotated[
+                str,
+                "The exact text to find and replace. Must be unique in the file unless replace_all is True.",
+            ],
+            new_string: Annotated[
+                str, "The text to replace old_string with. Must be different from old_string."
+            ],
             runtime: ToolRuntime[None, FilesystemState],
             *,
-            replace_all: Annotated[bool, "If True, replace all occurrences of old_string. If False (default), old_string must be unique."] = False,
+            replace_all: Annotated[
+                bool,
+                "If True, replace all occurrences of old_string. If False (default), old_string must be unique.",
+            ] = False,
+            context_snippet: Annotated[
+                str | None,
+                "Snippet from recent read output that anchors the edit location.",
+            ] = None,
+            line_start: Annotated[
+                int | None,
+                "Start line from recent read output for this edit (1-indexed).",
+            ] = None,
+            line_end: Annotated[
+                int | None,
+                "End line from recent read output for this edit (1-indexed).",
+            ] = None,
         ) -> Command | str:
             """Synchronous wrapper for edit_file tool."""
             resolved_backend = self._get_backend(runtime)
@@ -741,7 +934,18 @@ class FilesystemMiddleware(AgentMiddleware):
                 validated_path = _validate_path(file_path)
             except ValueError as e:
                 return f"Error: {e}"
-            res: EditResult = resolved_backend.edit(validated_path, old_string, new_string, replace_all=replace_all)
+            context_error = self._validate_edit_context(
+                file_path=validated_path,
+                old_string=old_string,
+                context_snippet=context_snippet,
+                line_start=line_start,
+                line_end=line_end,
+            )
+            if context_error:
+                return context_error
+            res: EditResult = resolved_backend.edit(
+                validated_path, old_string, new_string, replace_all=replace_all
+            )
             if res.error:
                 return res.error
             if res.files_update is not None:
@@ -756,15 +960,39 @@ class FilesystemMiddleware(AgentMiddleware):
                         ],
                     }
                 )
-            return f"Successfully replaced {res.occurrences} instance(s) of the string in '{res.path}'"
+            return (
+                f"Successfully replaced {res.occurrences} instance(s) of the string in '{res.path}'"
+            )
 
         async def async_edit_file(
-            file_path: Annotated[str, "Absolute path to the file to edit. Must be absolute, not relative."],
-            old_string: Annotated[str, "The exact text to find and replace. Must be unique in the file unless replace_all is True."],
-            new_string: Annotated[str, "The text to replace old_string with. Must be different from old_string."],
+            file_path: Annotated[
+                str, "Absolute path to the file to edit. Must be absolute, not relative."
+            ],
+            old_string: Annotated[
+                str,
+                "The exact text to find and replace. Must be unique in the file unless replace_all is True.",
+            ],
+            new_string: Annotated[
+                str, "The text to replace old_string with. Must be different from old_string."
+            ],
             runtime: ToolRuntime[None, FilesystemState],
             *,
-            replace_all: Annotated[bool, "If True, replace all occurrences of old_string. If False (default), old_string must be unique."] = False,
+            replace_all: Annotated[
+                bool,
+                "If True, replace all occurrences of old_string. If False (default), old_string must be unique.",
+            ] = False,
+            context_snippet: Annotated[
+                str | None,
+                "Snippet from recent read output that anchors the edit location.",
+            ] = None,
+            line_start: Annotated[
+                int | None,
+                "Start line from recent read output for this edit (1-indexed).",
+            ] = None,
+            line_end: Annotated[
+                int | None,
+                "End line from recent read output for this edit (1-indexed).",
+            ] = None,
         ) -> Command | str:
             """Asynchronous wrapper for edit_file tool."""
             resolved_backend = self._get_backend(runtime)
@@ -772,7 +1000,18 @@ class FilesystemMiddleware(AgentMiddleware):
                 validated_path = _validate_path(file_path)
             except ValueError as e:
                 return f"Error: {e}"
-            res: EditResult = await resolved_backend.aedit(validated_path, old_string, new_string, replace_all=replace_all)
+            context_error = self._validate_edit_context(
+                file_path=validated_path,
+                old_string=old_string,
+                context_snippet=context_snippet,
+                line_start=line_start,
+                line_end=line_end,
+            )
+            if context_error:
+                return context_error
+            res: EditResult = await resolved_backend.aedit(
+                validated_path, old_string, new_string, replace_all=replace_all
+            )
             if res.error:
                 return res.error
             if res.files_update is not None:
@@ -787,7 +1026,9 @@ class FilesystemMiddleware(AgentMiddleware):
                         ],
                     }
                 )
-            return f"Successfully replaced {res.occurrences} instance(s) of the string in '{res.path}'"
+            return (
+                f"Successfully replaced {res.occurrences} instance(s) of the string in '{res.path}'"
+            )
 
         return StructuredTool.from_function(
             name="edit_file",
@@ -801,7 +1042,9 @@ class FilesystemMiddleware(AgentMiddleware):
         tool_description = self._custom_tool_descriptions.get("glob") or GLOB_TOOL_DESCRIPTION
 
         def sync_glob(
-            pattern: Annotated[str, "Glob pattern to match files (e.g., '**/*.py', '*.txt', '/subdir/**/*.md')."],
+            pattern: Annotated[
+                str, "Glob pattern to match files (e.g., '**/*.py', '*.txt', '/subdir/**/*.md')."
+            ],
             runtime: ToolRuntime[None, FilesystemState],
             path: Annotated[str, "Base directory to search from. Defaults to root '/'."] = "/",
         ) -> str:
@@ -817,7 +1060,9 @@ class FilesystemMiddleware(AgentMiddleware):
             return str(result)
 
         async def async_glob(
-            pattern: Annotated[str, "Glob pattern to match files (e.g., '**/*.py', '*.txt', '/subdir/**/*.md')."],
+            pattern: Annotated[
+                str, "Glob pattern to match files (e.g., '**/*.py', '*.txt', '/subdir/**/*.md')."
+            ],
             runtime: ToolRuntime[None, FilesystemState],
             path: Annotated[str, "Base directory to search from. Defaults to root '/'."] = "/",
         ) -> str:
@@ -846,8 +1091,12 @@ class FilesystemMiddleware(AgentMiddleware):
         def sync_grep(
             pattern: Annotated[str, "Text pattern to search for (literal string, not regex)."],
             runtime: ToolRuntime[None, FilesystemState],
-            path: Annotated[str | None, "Directory to search in. Defaults to current working directory."] = None,
-            glob: Annotated[str | None, "Glob pattern to filter which files to search (e.g., '*.py')."] = None,
+            path: Annotated[
+                str | None, "Directory to search in. Defaults to current working directory."
+            ] = None,
+            glob: Annotated[
+                str | None, "Glob pattern to filter which files to search (e.g., '*.py')."
+            ] = None,
             output_mode: Annotated[
                 Literal["files_with_matches", "content", "count"],
                 "Output format: 'files_with_matches' (file paths only, default), 'content' (matching lines with context), 'count' (match counts per file).",
@@ -864,8 +1113,12 @@ class FilesystemMiddleware(AgentMiddleware):
         async def async_grep(
             pattern: Annotated[str, "Text pattern to search for (literal string, not regex)."],
             runtime: ToolRuntime[None, FilesystemState],
-            path: Annotated[str | None, "Directory to search in. Defaults to current working directory."] = None,
-            glob: Annotated[str | None, "Glob pattern to filter which files to search (e.g., '*.py')."] = None,
+            path: Annotated[
+                str | None, "Directory to search in. Defaults to current working directory."
+            ] = None,
+            glob: Annotated[
+                str | None, "Glob pattern to filter which files to search (e.g., '*.py')."
+            ] = None,
             output_mode: Annotated[
                 Literal["files_with_matches", "content", "count"],
                 "Output format: 'files_with_matches' (file paths only, default), 'content' (matching lines with context), 'count' (match counts per file).",
@@ -904,24 +1157,16 @@ class FilesystemMiddleware(AgentMiddleware):
                     "does not support command execution (SandboxBackendProtocol). "
                     "To use the execute tool, provide a backend that implements SandboxBackendProtocol."
                 )
+            blocked, guardrail_msg = self._command_guardrail(command)
+            if blocked:
+                return guardrail_msg or "Error: Command blocked by safety guardrail."
 
             try:
                 result = resolved_backend.execute(command)
             except NotImplementedError as e:
                 # Handle case where execute() exists but raises NotImplementedError
                 return f"Error: Execution not available. {e}"
-
-            # Format output for LLM consumption
-            parts = [result.output]
-
-            if result.exit_code is not None:
-                status = "succeeded" if result.exit_code == 0 else "failed"
-                parts.append(f"\n[Command {status} with exit code {result.exit_code}]")
-
-            if result.truncated:
-                parts.append("\n[Output was truncated due to size limits]")
-
-            return "".join(parts)
+            return self._format_execute_result(command, result, guardrail_msg)
 
         async def async_execute(
             command: Annotated[str, "Shell command to execute in the sandbox environment."],
@@ -937,24 +1182,16 @@ class FilesystemMiddleware(AgentMiddleware):
                     "does not support command execution (SandboxBackendProtocol). "
                     "To use the execute tool, provide a backend that implements SandboxBackendProtocol."
                 )
+            blocked, guardrail_msg = self._command_guardrail(command)
+            if blocked:
+                return guardrail_msg or "Error: Command blocked by safety guardrail."
 
             try:
                 result = await resolved_backend.aexecute(command)
             except NotImplementedError as e:
                 # Handle case where execute() exists but raises NotImplementedError
                 return f"Error: Execution not available. {e}"
-
-            # Format output for LLM consumption
-            parts = [result.output]
-
-            if result.exit_code is not None:
-                status = "succeeded" if result.exit_code == 0 else "failed"
-                parts.append(f"\n[Command {status} with exit code {result.exit_code}]")
-
-            if result.truncated:
-                parts.append("\n[Output was truncated due to size limits]")
-
-            return "".join(parts)
+            return self._format_execute_result(command, result, guardrail_msg)
 
         return StructuredTool.from_function(
             name="execute",
@@ -978,7 +1215,10 @@ class FilesystemMiddleware(AgentMiddleware):
             The model response from the handler.
         """
         # Check if execute tool is present and if backend supports it
-        has_execute_tool = any((tool.name if hasattr(tool, "name") else tool.get("name")) == "execute" for tool in request.tools)
+        has_execute_tool = any(
+            (tool.name if hasattr(tool, "name") else tool.get("name")) == "execute"
+            for tool in request.tools
+        )
 
         backend_supports_execution = False
         if has_execute_tool:
@@ -988,7 +1228,11 @@ class FilesystemMiddleware(AgentMiddleware):
 
             # If execute tool exists but backend doesn't support it, filter it out
             if not backend_supports_execution:
-                filtered_tools = [tool for tool in request.tools if (tool.name if hasattr(tool, "name") else tool.get("name")) != "execute"]
+                filtered_tools = [
+                    tool
+                    for tool in request.tools
+                    if (tool.name if hasattr(tool, "name") else tool.get("name")) != "execute"
+                ]
                 request = request.override(tools=filtered_tools)
                 has_execute_tool = False
 
@@ -1026,7 +1270,10 @@ class FilesystemMiddleware(AgentMiddleware):
             The model response from the handler.
         """
         # Check if execute tool is present and if backend supports it
-        has_execute_tool = any((tool.name if hasattr(tool, "name") else tool.get("name")) == "execute" for tool in request.tools)
+        has_execute_tool = any(
+            (tool.name if hasattr(tool, "name") else tool.get("name")) == "execute"
+            for tool in request.tools
+        )
 
         backend_supports_execution = False
         if has_execute_tool:
@@ -1036,7 +1283,11 @@ class FilesystemMiddleware(AgentMiddleware):
 
             # If execute tool exists but backend doesn't support it, filter it out
             if not backend_supports_execution:
-                filtered_tools = [tool for tool in request.tools if (tool.name if hasattr(tool, "name") else tool.get("name")) != "execute"]
+                filtered_tools = [
+                    tool
+                    for tool in request.tools
+                    if (tool.name if hasattr(tool, "name") else tool.get("name")) != "execute"
+                ]
                 request = request.override(tools=filtered_tools)
                 has_execute_tool = False
 
@@ -1187,7 +1438,9 @@ class FilesystemMiddleware(AgentMiddleware):
         )
         return processed_message, result.files_update
 
-    def _intercept_large_tool_result(self, tool_result: ToolMessage | Command, runtime: ToolRuntime) -> ToolMessage | Command:
+    def _intercept_large_tool_result(
+        self, tool_result: ToolMessage | Command, runtime: ToolRuntime
+    ) -> ToolMessage | Command:
         """Intercept and process large tool results before they're added to state.
 
         Args:
@@ -1240,10 +1493,16 @@ class FilesystemMiddleware(AgentMiddleware):
                 processed_messages.append(processed_message)
                 if files_update is not None:
                     accumulated_file_updates.update(files_update)
-            return Command(update={**update, "messages": processed_messages, "files": accumulated_file_updates})
-        raise AssertionError(f"Unreachable code reached in _intercept_large_tool_result: for tool_result of type {type(tool_result)}")
+            return Command(
+                update={**update, "messages": processed_messages, "files": accumulated_file_updates}
+            )
+        raise AssertionError(
+            f"Unreachable code reached in _intercept_large_tool_result: for tool_result of type {type(tool_result)}"
+        )
 
-    async def _aintercept_large_tool_result(self, tool_result: ToolMessage | Command, runtime: ToolRuntime) -> ToolMessage | Command:
+    async def _aintercept_large_tool_result(
+        self, tool_result: ToolMessage | Command, runtime: ToolRuntime
+    ) -> ToolMessage | Command:
         """Async version of _intercept_large_tool_result.
 
         Uses async backend methods to avoid sync calls in async context.
@@ -1286,8 +1545,12 @@ class FilesystemMiddleware(AgentMiddleware):
                 processed_messages.append(processed_message)
                 if files_update is not None:
                     accumulated_file_updates.update(files_update)
-            return Command(update={**update, "messages": processed_messages, "files": accumulated_file_updates})
-        raise AssertionError(f"Unreachable code reached in _aintercept_large_tool_result: for tool_result of type {type(tool_result)}")
+            return Command(
+                update={**update, "messages": processed_messages, "files": accumulated_file_updates}
+            )
+        raise AssertionError(
+            f"Unreachable code reached in _aintercept_large_tool_result: for tool_result of type {type(tool_result)}"
+        )
 
     def wrap_tool_call(
         self,
@@ -1303,7 +1566,10 @@ class FilesystemMiddleware(AgentMiddleware):
         Returns:
             The raw ToolMessage, or a pseudo tool message with the ToolResult in state.
         """
-        if self._tool_token_limit_before_evict is None or request.tool_call["name"] in TOOLS_EXCLUDED_FROM_EVICTION:
+        if (
+            self._tool_token_limit_before_evict is None
+            or request.tool_call["name"] in TOOLS_EXCLUDED_FROM_EVICTION
+        ):
             return handler(request)
 
         tool_result = handler(request)
@@ -1323,7 +1589,10 @@ class FilesystemMiddleware(AgentMiddleware):
         Returns:
             The raw ToolMessage, or a pseudo tool message with the ToolResult in state.
         """
-        if self._tool_token_limit_before_evict is None or request.tool_call["name"] in TOOLS_EXCLUDED_FROM_EVICTION:
+        if (
+            self._tool_token_limit_before_evict is None
+            or request.tool_call["name"] in TOOLS_EXCLUDED_FROM_EVICTION
+        ):
             return await handler(request)
 
         tool_result = await handler(request)

@@ -20,7 +20,7 @@ Examples:
 
 from collections import defaultdict
 
-from deepagents.backends.protocol import (
+from rlmagents._harness.backends.protocol import (
     BackendProtocol,
     EditResult,
     ExecuteResponse,
@@ -31,7 +31,7 @@ from deepagents.backends.protocol import (
     SandboxBackendProtocol,
     WriteResult,
 )
-from deepagents.backends.state import StateBackend
+from rlmagents._harness.backends.state import StateBackend
 
 
 class CompositeBackend(BackendProtocol):

@@ -14,7 +14,7 @@ import json
 import shlex
 from abc import ABC, abstractmethod
 
-from deepagents.backends.protocol import (
+from rlmagents._harness.backends.protocol import (
     EditResult,
     ExecuteResponse,
     FileDownloadResponse,

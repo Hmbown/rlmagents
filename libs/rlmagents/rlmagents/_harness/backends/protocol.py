@@ -424,6 +424,15 @@ class ExecuteResponse:
     exit_code: int | None = None
     """The process exit code. 0 indicates success, non-zero indicates failure."""
 
+    elapsed_ms: int | None = None
+    """Execution duration in milliseconds."""
+
+    cwd_hint: str | None = None
+    """Best-effort working-directory hint for where the command executed."""
+
+    stderr_digest: str | None = None
+    """Short hash digest of stderr content when available."""
+
     truncated: bool = False
     """Whether the output was truncated due to backend limitations."""
 

@@ -6,13 +6,26 @@ enable composition without fragile string parsing.
 """
 
 import re
+from fnmatch import fnmatch
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
-import wcmatch.glob as wcglob
+try:
+    import wcmatch.glob as wcglob
+except ModuleNotFoundError:  # pragma: no cover
+    class _FallbackWCGlob:
+        BRACE = 0
+        GLOBSTAR = 0
 
-from deepagents.backends.protocol import FileInfo as _FileInfo, GrepMatch as _GrepMatch
+        @staticmethod
+        def globmatch(path: str, pattern: str, flags: int = 0) -> bool:
+            del flags
+            return fnmatch(path, pattern)
+
+    wcglob = _FallbackWCGlob()
+
+from rlmagents._harness.backends.protocol import FileInfo as _FileInfo, GrepMatch as _GrepMatch
 
 EMPTY_CONTENT_WARNING = "System reminder: File exists but has empty contents"
 MAX_LINE_LENGTH = 5000
@@ -211,7 +224,9 @@ def truncate_if_too_long(result: list[str] | str) -> list[str] | str:
     if isinstance(result, list):
         total_chars = sum(len(item) for item in result)
         if total_chars > TOOL_RESULT_TOKEN_LIMIT * 4:
-            return result[: len(result) * TOOL_RESULT_TOKEN_LIMIT * 4 // total_chars] + [TRUNCATION_GUIDANCE]
+            return result[: len(result) * TOOL_RESULT_TOKEN_LIMIT * 4 // total_chars] + [
+                TRUNCATION_GUIDANCE
+            ]
         return result
     # string
     if len(result) > TOOL_RESULT_TOKEN_LIMIT * 4:
@@ -412,7 +427,11 @@ def _grep_search_files(
     filtered = _filter_files_by_path(files, normalized_path)
 
     if glob:
-        filtered = {fp: fd for fp, fd in filtered.items() if wcglob.globmatch(Path(fp).name, glob, flags=wcglob.BRACE)}
+        filtered = {
+            fp: fd
+            for fp, fd in filtered.items()
+            if wcglob.globmatch(Path(fp).name, glob, flags=wcglob.BRACE)
+        }
 
     results: dict[str, list[tuple[int, str]]] = {}
     for file_path, file_data in filtered.items():
@@ -452,7 +471,11 @@ def grep_matches_from_files(
     filtered = _filter_files_by_path(files, normalized_path)
 
     if glob:
-        filtered = {fp: fd for fp, fd in filtered.items() if wcglob.globmatch(Path(fp).name, glob, flags=wcglob.BRACE)}
+        filtered = {
+            fp: fd
+            for fp, fd in filtered.items()
+            if wcglob.globmatch(Path(fp).name, glob, flags=wcglob.BRACE)
+        }
 
     matches: list[GrepMatch] = []
     for file_path, file_data in filtered.items():

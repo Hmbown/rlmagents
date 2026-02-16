@@ -199,8 +199,9 @@ class RLMSessionManager:
         parts.append(f"Context: {_fmt_meta(session.meta)}")
 
         if session.think_history:
-            parts.append(f"\n### Think Steps ({len(session.think_history)})")
-            for i, q in enumerate(session.think_history[-10:], 1):
+            recent_thinks = session.think_history[-10:]
+            parts.append(f"\n### Think Steps ({len(recent_thinks)})")
+            for i, q in enumerate(recent_thinks, 1):
                 parts.append(f"{i}. {q}")
 
         if session.confidence_history:

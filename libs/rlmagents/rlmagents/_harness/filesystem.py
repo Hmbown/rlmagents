@@ -562,10 +562,12 @@ class FilesystemMiddleware(AgentMiddleware):
             and line_start >= 1
             and line_end >= line_start
         )
-        if not has_snippet and not has_line_range:
+        old_string_seen = old_string in cached
+        if not has_snippet and not has_line_range and not old_string_seen:
             return (
                 "Error: Refusing blind edit. Provide either `context_snippet` or "
-                "`line_start` and `line_end`."
+                "`line_start` and `line_end`, or ensure `old_string` appears in a "
+                "recent read output."
             )
 
         if has_snippet and context_snippet and context_snippet not in cached:
@@ -574,7 +576,7 @@ class FilesystemMiddleware(AgentMiddleware):
                 f"'{file_path}'. Re-read the file and pass an exact snippet."
             )
 
-        if old_string not in cached:
+        if not old_string_seen:
             return (
                 "Error: Refusing edit because old_string is not present in the recent read "
                 f"output for '{file_path}'. Re-read and verify target text."

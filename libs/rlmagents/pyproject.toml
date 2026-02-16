@@ -1,0 +1,66 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "rlmagents"
+version = "0.1.0"
+description = "RLM-enhanced agents: Aleph's recursive reasoning with built-in planning, filesystem, and sub-agent capabilities"
+readme = "README.md"
+requires-python = ">=3.11,<4.0"
+license = {text = "MIT"}
+keywords = ["agent", "rlm", "aleph", "recursive-reasoning", "langchain", "langgraph"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "aleph-rlm>=0.8.5",
+    "langchain-core>=1.2.10,<2.0.0",
+    "langchain>=1.2.10,<2.0.0",
+    "langchain-anthropic>=0.3.0",
+    "langgraph>=0.3.0",
+    "pyyaml>=6.0",
+]
+
+[dependency-groups]
+test = [
+    "pytest>=8.3.4",
+    "pytest-asyncio>=0.25.3",
+    "pytest-cov>=6.0.0",
+    "pytest-mock>=3.14.0",
+    "pytest-timeout>=2.3.1",
+    "ruff>=0.9.7",
+]
+
+[project.urls]
+Repository = "https://github.com/Hmbown/rlmagents"
+
+[tool.uv]
+package = true
+
+[tool.uv.sources]
+aleph-rlm = { path = "../../../aleph", editable = true }
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "TID252"]
+
+[tool.ruff.lint.isort]
+force-single-line = false
+combine-as-imports = true
+known-first-party = ["rlmagents"]
+
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "all"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"

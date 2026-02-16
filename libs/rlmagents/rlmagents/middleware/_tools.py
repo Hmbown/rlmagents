@@ -1,0 +1,1208 @@
+"""LangChain tool factories for RLM middleware.
+
+22 tools built via StructuredTool.from_function(), each delegating to
+RLMSessionManager.  Follows the pattern from filesystem.py.
+"""
+
+from __future__ import annotations
+
+import difflib
+import json
+from datetime import datetime
+from typing import Annotated, Any
+
+from langchain_core.tools import BaseTool, StructuredTool
+
+from aleph.mcp.session import _Evidence
+
+from rlmagents.session_manager import RLMSessionManager
+
+
+def _build_rlm_tools(manager: RLMSessionManager) -> list[BaseTool]:
+    """Build all 23 RLM tools for the given session manager."""
+    return [
+        # Context tools (5)
+        _create_load_context_tool(manager),
+        _create_list_contexts_tool(manager),
+        _create_diff_contexts_tool(manager),
+        _create_save_session_tool(manager),
+        _create_load_session_tool(manager),
+        # Query tools (6) - includes cross-context search
+        _create_peek_context_tool(manager),
+        _create_search_context_tool(manager),
+        _create_semantic_search_tool(manager),
+        _create_cross_context_search_tool(manager),
+        _create_exec_python_tool(manager),
+        _create_get_variable_tool(manager),
+        # Reasoning tools (5)
+        _create_think_tool(manager),
+        _create_evaluate_progress_tool(manager),
+        _create_summarize_so_far_tool(manager),
+        _create_get_evidence_tool(manager),
+        _create_finalize_tool(manager),
+        # Status/meta tools (2)
+        _create_get_status_tool(manager),
+        _create_rlm_tasks_tool(manager),
+        # Recipe tools (4)
+        _create_validate_recipe_tool(manager),
+        _create_estimate_recipe_tool(manager),
+        _create_run_recipe_tool(manager),
+        _create_run_recipe_code_tool(manager),
+        # Config tool (1)
+        _create_configure_rlm_tool(manager),
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _fmt_meta(meta: Any) -> str:
+    """Format ContextMetadata to a readable string."""
+    return (
+        f"Format: {meta.format.value}, "
+        f"{meta.size_chars:,} chars, "
+        f"{meta.size_lines:,} lines, "
+        f"~{meta.size_tokens_estimate:,} tokens"
+    )
+
+
+def _truncate(text: str, max_chars: int = 50_000) -> str:
+    if len(text) <= max_chars:
+        return text
+    return text[:max_chars] + f"\n... [truncated at {max_chars:,} chars]"
+
+
+# ===========================================================================
+# Context Tools (5)
+# ===========================================================================
+
+def _create_load_context_tool(manager: RLMSessionManager) -> BaseTool:
+    def sync_load_context(
+        content: Annotated[str, "Text content to load into the isolated context"],
+        context_id: Annotated[str, "Session identifier"] = "default",
+        format_hint: Annotated[str, "Format hint: auto, text, json, csv, code"] = "auto",
+        line_number_base: Annotated[int, "Line numbering base: 0 or 1"] = 1,
+    ) -> str:
+        meta = manager.create_session(
+            content, context_id=context_id,
+            format_hint=format_hint, line_number_base=line_number_base,
+        )
+        return f"Context '{context_id}' loaded. {_fmt_meta(meta)}"
+
+    async def async_load_context(
+        content: Annotated[str, "Text content to load into the isolated context"],
+        context_id: Annotated[str, "Session identifier"] = "default",
+        format_hint: Annotated[str, "Format hint: auto, text, json, csv, code"] = "auto",
+        line_number_base: Annotated[int, "Line numbering base: 0 or 1"] = 1,
+    ) -> str:
+        return sync_load_context(content, context_id, format_hint, line_number_base)
+
+    return StructuredTool.from_function(
+        name="load_context",
+        description=(
+            "Load text content into an isolated RLM context for analysis. "
+            "Use search_context/peek_context/exec_python to explore it. "
+            "Supports multiple contexts via context_id."
+        ),
+        func=sync_load_context,
+        coroutine=async_load_context,
+    )
+
+
+def _create_list_contexts_tool(manager: RLMSessionManager) -> BaseTool:
+    def sync_list_contexts() -> str:
+        sessions = manager.list_sessions()
+        if not sessions:
+            return "No active contexts."
+        lines = []
+        for cid, info in sessions.items():
+            lines.append(
+                f"- {cid}: {info['format']}, {info['size_chars']:,} chars, "
+                f"{info['iterations']} iterations, {info['evidence_count']} evidence"
+            )
+        return "\n".join(lines)
+
+    async def async_list_contexts() -> str:
+        return sync_list_contexts()
+
+    return StructuredTool.from_function(
+        name="list_contexts",
+        description="List all active RLM context sessions with metadata.",
+        func=sync_list_contexts,
+        coroutine=async_list_contexts,
+    )
+
+
+def _create_diff_contexts_tool(manager: RLMSessionManager) -> BaseTool:
+    def sync_diff_contexts(
+        a: Annotated[str, "First context ID"],
+        b: Annotated[str, "Second context ID"],
+        context_lines: Annotated[int, "Lines of context around changes"] = 3,
+    ) -> str:
+        session_a = manager.get_session(a)
+        session_b = manager.get_session(b)
+        if session_a is None:
+            return f"Context '{a}' not found."
+        if session_b is None:
+            return f"Context '{b}' not found."
+
+        text_a = str(session_a.repl.get_variable("ctx") or "")
+        text_b = str(session_b.repl.get_variable("ctx") or "")
+
+        diff = difflib.unified_diff(
+            text_a.splitlines(keepends=True),
+            text_b.splitlines(keepends=True),
+            fromfile=a,
+            tofile=b,
+            n=context_lines,
+        )
+        result = "".join(diff)
+        if not result:
+            return "No differences found."
+        return _truncate(result, 30_000)
+
+    async def async_diff_contexts(
+        a: Annotated[str, "First context ID"],
+        b: Annotated[str, "Second context ID"],
+        context_lines: Annotated[int, "Lines of context around changes"] = 3,
+    ) -> str:
+        return sync_diff_contexts(a, b, context_lines)
+
+    return StructuredTool.from_function(
+        name="diff_contexts",
+        description="Compare two RLM contexts using unified diff.",
+        func=sync_diff_contexts,
+        coroutine=async_diff_contexts,
+    )
+
+
+def _create_save_session_tool(manager: RLMSessionManager) -> BaseTool:
+    def sync_save_session(
+        context_id: Annotated[str, "Session to save"] = "default",
+        path: Annotated[str, "File path to write JSON (optional)"] = "",
+    ) -> str:
+        try:
+            payload = manager.save_session(
+                context_id=context_id,
+                path=path if path else None,
+            )
+        except KeyError:
+            return f"No session with context_id='{context_id}'."
+        size = len(json.dumps(payload))
+        msg = f"Session '{context_id}' serialized ({size:,} bytes)."
+        if path:
+            msg += f" Written to {path}."
+        return msg
+
+    async def async_save_session(
+        context_id: Annotated[str, "Session to save"] = "default",
+        path: Annotated[str, "File path to write JSON (optional)"] = "",
+    ) -> str:
+        return sync_save_session(context_id, path)
+
+    return StructuredTool.from_function(
+        name="save_session",
+        description="Serialize an RLM session to JSON (memory pack). Optionally write to file.",
+        func=sync_save_session,
+        coroutine=async_save_session,
+    )
+
+
+def _create_load_session_tool(manager: RLMSessionManager) -> BaseTool:
+    def sync_load_session(
+        path: Annotated[str, "File path to load JSON session from"],
+        context_id: Annotated[str, "Override context ID (optional)"] = "",
+    ) -> str:
+        try:
+            meta = manager.load_session_from_file(
+                path=path,
+                context_id=context_id if context_id else None,
+            )
+        except Exception as exc:
+            return f"Failed to load session: {exc}"
+        return f"Session loaded from {path}. {_fmt_meta(meta)}"
+
+    async def async_load_session(
+        path: Annotated[str, "File path to load JSON session from"],
+        context_id: Annotated[str, "Override context ID (optional)"] = "",
+    ) -> str:
+        return sync_load_session(path, context_id)
+
+    return StructuredTool.from_function(
+        name="load_session",
+        description="Load a previously saved RLM session from a JSON file.",
+        func=sync_load_session,
+        coroutine=async_load_session,
+    )
+
+
+# ===========================================================================
+# Query Tools (5)
+# ===========================================================================
+
+def _create_peek_context_tool(manager: RLMSessionManager) -> BaseTool:
+    def sync_peek_context(
+        context_id: Annotated[str, "Session identifier"] = "default",
+        start: Annotated[int, "Start position (chars or lines)"] = 0,
+        end: Annotated[int, "End position (chars or lines, 0 = all)"] = 0,
+        unit: Annotated[str, "Unit: 'chars' or 'lines'"] = "chars",
+    ) -> str:
+        session = manager.get_or_create_session(context_id)
+        session.iterations += 1
+
+        ctx_text = str(session.repl.get_variable("ctx") or "")
+        if not ctx_text:
+            return f"Context '{context_id}' is empty."
+
+        if unit == "lines":
+            all_lines = ctx_text.splitlines()
+            effective_end = end if end > 0 else len(all_lines)
+            selected = all_lines[start:effective_end]
+            result = "\n".join(
+                f"{i + start + session.line_number_base}: {line}"
+                for i, line in enumerate(selected)
+            )
+        else:
+            effective_end = end if end > 0 else len(ctx_text)
+            result = ctx_text[start:effective_end]
+
+        snippet = result[:200]
+        session.add_evidence(_Evidence(
+            source="peek",
+            line_range=(start, end) if unit == "lines" else None,
+            pattern=None,
+            snippet=snippet,
+            note=f"peek {unit}[{start}:{end}]",
+        ))
+        return _truncate(result)
+
+    async def async_peek_context(
+        context_id: Annotated[str, "Session identifier"] = "default",
+        start: Annotated[int, "Start position (chars or lines)"] = 0,
+        end: Annotated[int, "End position (chars or lines, 0 = all)"] = 0,
+        unit: Annotated[str, "Unit: 'chars' or 'lines'"] = "chars",
+    ) -> str:
+        return sync_peek_context(context_id, start, end, unit)
+
+    return StructuredTool.from_function(
+        name="peek_context",
+        description=(
+            "View a portion of the RLM context by character range or line range. "
+            "Use unit='lines' for line-based slicing."
+        ),
+        func=sync_peek_context,
+        coroutine=async_peek_context,
+    )
+
+
+def _create_search_context_tool(manager: RLMSessionManager) -> BaseTool:
+    def sync_search_context(
+        pattern: Annotated[str, "Regex pattern to search for"],
+        context_id: Annotated[str, "Session identifier"] = "default",
+        context_lines: Annotated[int, "Lines of context around each match"] = 2,
+        max_results: Annotated[int, "Maximum matches to return"] = 10,
+    ) -> str:
+        session = manager.get_or_create_session(context_id)
+        session.iterations += 1
+
+        search_fn = session.repl.get_helper("search")
+        if search_fn is None:
+            return "search helper not available"
+        results = search_fn(pattern, context_lines=context_lines, max_results=max_results)
+
+        if not results:
+            return f"No matches for pattern: {pattern}"
+
+        lines = []
+        for r in results:
+            line_num = r.get("line_num", "?")
+            match_text = r.get("match", "")
+            ctx_text = r.get("context", "")
+            lines.append(f"Line {line_num}: {match_text}")
+            if ctx_text:
+                lines.append(f"  {ctx_text}")
+
+        snippet = "\n".join(lines)[:300]
+        session.add_evidence(_Evidence(
+            source="search",
+            line_range=None,
+            pattern=pattern,
+            snippet=snippet,
+            note=f"{len(results)} matches",
+        ))
+        return _truncate("\n".join(lines))
+
+    async def async_search_context(
+        pattern: Annotated[str, "Regex pattern to search for"],
+        context_id: Annotated[str, "Session identifier"] = "default",
+        context_lines: Annotated[int, "Lines of context around each match"] = 2,
+        max_results: Annotated[int, "Maximum matches to return"] = 10,
+    ) -> str:
+        return sync_search_context(pattern, context_id, context_lines, max_results)
+
+    return StructuredTool.from_function(
+        name="search_context",
+        description=(
+            "Regex search over an isolated RLM context. Returns matches with "
+            "line numbers and surrounding context. Evidence is recorded automatically."
+        ),
+        func=sync_search_context,
+        coroutine=async_search_context,
+    )
+
+
+def _create_semantic_search_tool(manager: RLMSessionManager) -> BaseTool:
+    def sync_semantic_search(
+        query: Annotated[str, "Natural language search query"],
+        context_id: Annotated[str, "Session identifier"] = "default",
+        chunk_size: Annotated[int, "Characters per chunk"] = 1000,
+        overlap: Annotated[int, "Overlap between chunks"] = 100,
+        top_k: Annotated[int, "Number of results to return"] = 5,
+    ) -> str:
+        session = manager.get_or_create_session(context_id)
+        session.iterations += 1
+
+        sem_fn = session.repl.get_helper("semantic_search")
+        if sem_fn is None:
+            return "semantic_search helper not available"
+
+        results = sem_fn(
+            query, chunk_size=chunk_size, overlap=overlap, top_k=top_k,
+        )
+        if not results:
+            return f"No semantic matches for: {query}"
+
+        lines = []
+        for i, r in enumerate(results, 1):
+            score = r.get("score", 0)
+            text = r.get("text", r.get("chunk", ""))[:500]
+            lines.append(f"[{i}] score={score:.3f}\n{text}")
+
+        snippet = "\n".join(lines)[:300]
+        session.add_evidence(_Evidence(
+            source="search",
+            line_range=None,
+            pattern=query,
+            snippet=snippet,
+            note=f"semantic_search top_{top_k}",
+        ))
+        return _truncate("\n\n".join(lines))
+
+    async def async_semantic_search(
+        query: Annotated[str, "Natural language search query"],
+        context_id: Annotated[str, "Session identifier"] = "default",
+        chunk_size: Annotated[int, "Characters per chunk"] = 1000,
+        overlap: Annotated[int, "Overlap between chunks"] = 100,
+        top_k: Annotated[int, "Number of results to return"] = 5,
+    ) -> str:
+        return sync_semantic_search(query, context_id, chunk_size, overlap, top_k)
+
+    return StructuredTool.from_function(
+        name="semantic_search",
+        description=(
+            "Lightweight semantic search over RLM context using hashed embeddings. "
+            "Good for finding conceptually related passages."
+        ),
+        func=sync_semantic_search,
+        coroutine=async_semantic_search,
+    )
+
+
+def _create_cross_context_search_tool(manager: RLMSessionManager) -> BaseTool:
+    def sync_cross_context_search(
+        pattern: Annotated[str, "Regex pattern to search for across all contexts"],
+        context_lines: Annotated[int, "Lines of context around each match"] = 2,
+        max_results_per_context: Annotated[int, "Maximum matches to return per context"] = 5,
+        contexts: Annotated[str | None, "Comma-separated context IDs to search (default: all)"] = None,
+    ) -> str:
+        """Search across multiple RLM contexts simultaneously.
+        
+        This tool performs a regex search across all active contexts (or specified
+        contexts) and returns results organized by context with source attribution.
+        
+        Args:
+            pattern: Regex pattern to search for.
+            context_lines: Lines of context around each match.
+            max_results_per_context: Maximum matches to return per context.
+            contexts: Optional comma-separated list of context IDs to search.
+                     If None, searches all active contexts.
+        
+        Returns:
+            Search results organized by context with source attribution.
+        """
+        sessions = manager.list_sessions()
+        if not sessions:
+            return "No active contexts to search."
+        
+        # Determine which contexts to search
+        if contexts:
+            context_ids = [cid.strip() for cid in contexts.split(",") if cid.strip()]
+        else:
+            context_ids = list(sessions.keys())
+        
+        all_results = []
+        
+        for context_id in context_ids:
+            session = manager.get_session(context_id)
+            if session is None:
+                all_results.append(f"Context '{context_id}' not found.")
+                continue
+            
+            search_fn = session.repl.get_helper("search")
+            if search_fn is None:
+                all_results.append(f"Context '{context_id}': search helper not available")
+                continue
+            
+            results = search_fn(pattern, context_lines=context_lines, max_results=max_results_per_context)
+            
+            if results:
+                ctx_results = [f"## Context: {context_id}"]
+                for r in results:
+                    line_num = r.get("line_num", "?")
+                    match_text = r.get("match", "")
+                    ctx_text = r.get("context", "")
+                    ctx_results.append(f"### Line {line_num}: {match_text}")
+                    if ctx_text:
+                        ctx_results.append(f"```\n{ctx_text}\n```")
+                
+                all_results.append("\n".join(ctx_results))
+                
+                # Record evidence for this search
+                snippet = "\n".join([r.get("match", "") for r in results[:3]])[:300]
+                session.add_evidence(_Evidence(
+                    source="cross_context_search",
+                    line_range=None,
+                    pattern=pattern,
+                    snippet=snippet,
+                    note=f"cross-context search: {len(results)} matches",
+                ))
+            else:
+                all_results.append(f"## Context: {context_id}\nNo matches found.")
+        
+        if not all_results:
+            return "No contexts were searched."
+        
+        return _truncate("\n\n".join(all_results))
+    
+    async def async_cross_context_search(
+        pattern: Annotated[str, "Regex pattern to search for across all contexts"],
+        context_lines: Annotated[int, "Lines of context around each match"] = 2,
+        max_results_per_context: Annotated[int, "Maximum matches to return per context"] = 5,
+        contexts: Annotated[str | None, "Comma-separated context IDs to search (default: all)"] = None,
+    ) -> str:
+        return sync_cross_context_search(pattern, context_lines, max_results_per_context, contexts)
+    
+    return StructuredTool.from_function(
+        name="cross_context_search",
+        description=(
+            "Search across multiple RLM contexts simultaneously using regex. "
+            "Returns results organized by context with source attribution. "
+            "Use 'contexts' parameter to search specific contexts (comma-separated), "
+            "or leave empty to search all active contexts."
+        ),
+        func=sync_cross_context_search,
+        coroutine=async_cross_context_search,
+    )
+
+
+def _create_exec_python_tool(manager: RLMSessionManager) -> BaseTool:
+    def sync_exec_python(
+        code: Annotated[str, "Python code to execute in the sandboxed REPL"],
+        context_id: Annotated[str, "Session identifier"] = "default",
+    ) -> str:
+        session = manager.get_or_create_session(context_id)
+        session.iterations += 1
+
+        result = session.repl.execute(code)
+
+        parts = []
+        if result.stdout:
+            parts.append(result.stdout)
+        if result.stderr:
+            parts.append(f"STDERR: {result.stderr}")
+        if result.return_value is not None:
+            rv = repr(result.return_value)
+            if len(rv) > 10_000:
+                rv = rv[:10_000] + "... [truncated]"
+            parts.append(f"=> {rv}")
+        if result.error:
+            parts.append(f"ERROR: {result.error}")
+        if result.variables_updated:
+            parts.append(f"Variables updated: {', '.join(result.variables_updated)}")
+
+        output = "\n".join(parts) if parts else "(no output)"
+
+        # Record evidence for any citations made during execution
+        for citation in session.repl._citations:
+            session.add_evidence(_Evidence(
+                source="exec",
+                line_range=citation.get("line_range"),
+                pattern=None,
+                snippet=citation.get("snippet", "")[:300],
+                note=citation.get("note"),
+            ))
+        session.repl._citations.clear()
+
+        return _truncate(output)
+
+    async def async_exec_python(
+        code: Annotated[str, "Python code to execute in the sandboxed REPL"],
+        context_id: Annotated[str, "Session identifier"] = "default",
+    ) -> str:
+        return sync_exec_python(code, context_id)
+
+    return StructuredTool.from_function(
+        name="exec_python",
+        description=(
+            "Execute Python code in the sandboxed REPL with 100+ built-in helpers. "
+            "The context is available as `ctx`. Helpers include search(), peek(), "
+            "extract_*(), cite(), sub_query(), and more."
+        ),
+        func=sync_exec_python,
+        coroutine=async_exec_python,
+    )
+
+
+def _create_get_variable_tool(manager: RLMSessionManager) -> BaseTool:
+    def sync_get_variable(
+        name: Annotated[str, "Variable name to retrieve from the REPL namespace"],
+        context_id: Annotated[str, "Session identifier"] = "default",
+    ) -> str:
+        session = manager.get_session(context_id)
+        if session is None:
+            return f"No session '{context_id}'."
+        val = session.repl.get_variable(name)
+        if val is None:
+            return f"Variable '{name}' not found."
+        result = repr(val)
+        return _truncate(result, 20_000)
+
+    async def async_get_variable(
+        name: Annotated[str, "Variable name to retrieve from the REPL namespace"],
+        context_id: Annotated[str, "Session identifier"] = "default",
+    ) -> str:
+        return sync_get_variable(name, context_id)
+
+    return StructuredTool.from_function(
+        name="get_variable",
+        description="Retrieve a variable from the RLM REPL namespace.",
+        func=sync_get_variable,
+        coroutine=async_get_variable,
+    )
+
+
+# ===========================================================================
+# Reasoning Tools (5)
+# ===========================================================================
+
+def _create_think_tool(manager: RLMSessionManager) -> BaseTool:
+    def sync_think(
+        question: Annotated[str, "The reasoning sub-step or question to structure"],
+        context_id: Annotated[str, "Session identifier"] = "default",
+        context_slice: Annotated[str, "Optional context excerpt to reason about"] = "",
+    ) -> str:
+        session = manager.get_or_create_session(context_id)
+        session.iterations += 1
+        session.think_history.append(question)
+
+        step_num = len(session.think_history)
+        parts = [f"## Think Step {step_num}\n\n**Question:** {question}"]
+
+        if context_slice:
+            parts.append(f"\n**Context excerpt:**\n```\n{context_slice[:2000]}\n```")
+
+        parts.append(
+            "\n**Instructions:** Analyze this question using available evidence and context. "
+            "Use search_context or exec_python to gather more data if needed."
+        )
+
+        return "\n".join(parts)
+
+    async def async_think(
+        question: Annotated[str, "The reasoning sub-step or question to structure"],
+        context_id: Annotated[str, "Session identifier"] = "default",
+        context_slice: Annotated[str, "Optional context excerpt to reason about"] = "",
+    ) -> str:
+        return sync_think(question, context_id, context_slice)
+
+    return StructuredTool.from_function(
+        name="think",
+        description=(
+            "Structure a reasoning sub-step. Records the question in think_history "
+            "and returns a structured prompt for analysis."
+        ),
+        func=sync_think,
+        coroutine=async_think,
+    )
+
+
+def _create_evaluate_progress_tool(manager: RLMSessionManager) -> BaseTool:
+    def sync_evaluate_progress(
+        current_understanding: Annotated[str, "Summary of current understanding"],
+        confidence_score: Annotated[float, "Confidence score 0.0-1.0"] = 0.5,
+        remaining_questions: Annotated[str, "Comma-separated remaining questions"] = "",
+        context_id: Annotated[str, "Session identifier"] = "default",
+    ) -> str:
+        session = manager.get_or_create_session(context_id)
+        session.confidence_history.append(confidence_score)
+
+        prev_evidence = session.information_gain[-1] if session.information_gain else 0
+        current_evidence = len(session.evidence)
+        gain = current_evidence - prev_evidence
+        session.information_gain.append(current_evidence)
+
+        parts = [
+            f"## Progress Evaluation",
+            f"**Confidence:** {confidence_score:.0%}",
+            f"**Information gain:** +{gain} evidence items (total: {current_evidence})",
+            f"**Iterations:** {session.iterations}",
+            f"**Think steps:** {len(session.think_history)}",
+        ]
+
+        if remaining_questions:
+            parts.append(f"**Remaining questions:** {remaining_questions}")
+
+        trend = ""
+        if len(session.confidence_history) >= 2:
+            delta = session.confidence_history[-1] - session.confidence_history[-2]
+            trend = "improving" if delta > 0 else "declining" if delta < 0 else "stable"
+            parts.append(f"**Confidence trend:** {trend} ({delta:+.0%})")
+
+        if confidence_score >= 0.8:
+            parts.append("\nConsider using `finalize` if you have sufficient evidence.")
+        elif confidence_score < 0.3:
+            parts.append("\nConfidence is low. Consider more exploration with search_context or exec_python.")
+
+        return "\n".join(parts)
+
+    async def async_evaluate_progress(
+        current_understanding: Annotated[str, "Summary of current understanding"],
+        confidence_score: Annotated[float, "Confidence score 0.0-1.0"] = 0.5,
+        remaining_questions: Annotated[str, "Comma-separated remaining questions"] = "",
+        context_id: Annotated[str, "Session identifier"] = "default",
+    ) -> str:
+        return sync_evaluate_progress(
+            current_understanding, confidence_score, remaining_questions, context_id,
+        )
+
+    return StructuredTool.from_function(
+        name="evaluate_progress",
+        description=(
+            "Self-evaluate reasoning progress. Tracks confidence history and "
+            "information gain to guide the analysis."
+        ),
+        func=sync_evaluate_progress,
+        coroutine=async_evaluate_progress,
+    )
+
+
+def _create_summarize_so_far_tool(manager: RLMSessionManager) -> BaseTool:
+    def sync_summarize_so_far(
+        context_id: Annotated[str, "Session identifier"] = "default",
+        include_evidence: Annotated[bool, "Include evidence summary"] = True,
+        include_variables: Annotated[bool, "Include REPL variable names"] = True,
+        clear_history: Annotated[bool, "Clear think_history after summarizing"] = False,
+    ) -> str:
+        session = manager.get_session(context_id)
+        if session is None:
+            return f"No session '{context_id}'."
+
+        parts = [f"## Session Summary: {context_id}"]
+        parts.append(f"**Iterations:** {session.iterations}")
+        parts.append(f"**Context:** {_fmt_meta(session.meta)}")
+
+        if session.think_history:
+            parts.append(f"\n### Think Steps ({len(session.think_history)})")
+            for i, q in enumerate(session.think_history[-10:], 1):
+                parts.append(f"{i}. {q}")
+
+        if session.confidence_history:
+            latest = session.confidence_history[-1]
+            parts.append(f"\n**Latest confidence:** {latest:.0%}")
+
+        if include_evidence and session.evidence:
+            parts.append(f"\n### Evidence ({len(session.evidence)} items)")
+            for ev in session.evidence[-5:]:
+                src = ev.source
+                snip = ev.snippet[:100]
+                parts.append(f"- [{src}] {snip}")
+
+        if include_variables:
+            # List user-defined variables (not helpers)
+            ns = session.repl._namespace
+            helpers = set(session.repl._helpers.keys())
+            builtins_keys = {"__builtins__", "ctx", "line_number_base"}
+            user_vars = [
+                k for k in ns
+                if k not in helpers and k not in builtins_keys and not k.startswith("_")
+            ]
+            if user_vars:
+                parts.append(f"\n**Variables:** {', '.join(sorted(user_vars))}")
+
+        if clear_history:
+            session.think_history.clear()
+            parts.append("\n(think_history cleared)")
+
+        return "\n".join(parts)
+
+    async def async_summarize_so_far(
+        context_id: Annotated[str, "Session identifier"] = "default",
+        include_evidence: Annotated[bool, "Include evidence summary"] = True,
+        include_variables: Annotated[bool, "Include REPL variable names"] = True,
+        clear_history: Annotated[bool, "Clear think_history after summarizing"] = False,
+    ) -> str:
+        return sync_summarize_so_far(
+            context_id, include_evidence, include_variables, clear_history,
+        )
+
+    return StructuredTool.from_function(
+        name="summarize_so_far",
+        description=(
+            "Compress reasoning history into a summary. Useful for managing "
+            "context window when analysis has many steps."
+        ),
+        func=sync_summarize_so_far,
+        coroutine=async_summarize_so_far,
+    )
+
+
+def _create_get_evidence_tool(manager: RLMSessionManager) -> BaseTool:
+    def sync_get_evidence(
+        context_id: Annotated[str, "Session identifier"] = "default",
+        source: Annotated[str, "Filter by source: any, search, peek, exec, manual, action"] = "any",
+        limit: Annotated[int, "Maximum items to return"] = 20,
+        offset: Annotated[int, "Skip first N items"] = 0,
+    ) -> str:
+        session = manager.get_session(context_id)
+        if session is None:
+            return f"No session '{context_id}'."
+
+        evidence = session.evidence
+        if source != "any":
+            evidence = [e for e in evidence if e.source == source]
+
+        total = len(evidence)
+        evidence = evidence[offset:offset + limit]
+
+        if not evidence:
+            return "No evidence collected yet."
+
+        lines = [f"## Evidence ({total} total, showing {len(evidence)})"]
+        for i, ev in enumerate(evidence, offset + 1):
+            lines.append(f"\n### [{i}] {ev.source}")
+            if ev.pattern:
+                lines.append(f"Pattern: {ev.pattern}")
+            if ev.line_range:
+                lines.append(f"Lines: {ev.line_range[0]}-{ev.line_range[1]}")
+            lines.append(f"```\n{ev.snippet[:500]}\n```")
+            if ev.note:
+                lines.append(f"Note: {ev.note}")
+
+        return "\n".join(lines)
+
+    async def async_get_evidence(
+        context_id: Annotated[str, "Session identifier"] = "default",
+        source: Annotated[str, "Filter by source: any, search, peek, exec, manual, action"] = "any",
+        limit: Annotated[int, "Maximum items to return"] = 20,
+        offset: Annotated[int, "Skip first N items"] = 0,
+    ) -> str:
+        return sync_get_evidence(context_id, source, limit, offset)
+
+    return StructuredTool.from_function(
+        name="get_evidence",
+        description=(
+            "Retrieve collected evidence/citations from the analysis. "
+            "Can filter by source type and paginate."
+        ),
+        func=sync_get_evidence,
+        coroutine=async_get_evidence,
+    )
+
+
+def _create_finalize_tool(manager: RLMSessionManager) -> BaseTool:
+    def sync_finalize(
+        answer: Annotated[str, "The final answer with evidence citations"],
+        confidence: Annotated[str, "Confidence level: high, medium, low"] = "medium",
+        reasoning_summary: Annotated[str, "Brief summary of the reasoning process"] = "",
+        context_id: Annotated[str, "Session identifier"] = "default",
+    ) -> str:
+        session = manager.get_session(context_id)
+
+        parts = [f"## Final Answer\n\n{answer}"]
+        parts.append(f"\n**Confidence:** {confidence}")
+
+        if reasoning_summary:
+            parts.append(f"**Reasoning:** {reasoning_summary}")
+
+        if session:
+            parts.append(f"\n**Analysis stats:** {session.iterations} iterations, "
+                         f"{len(session.evidence)} evidence items, "
+                         f"{len(session.think_history)} think steps")
+
+            if session.evidence:
+                parts.append("\n### Supporting Evidence")
+                for i, ev in enumerate(session.evidence[-5:], 1):
+                    parts.append(f"{i}. [{ev.source}] {ev.snippet[:150]}")
+
+        return "\n".join(parts)
+
+    async def async_finalize(
+        answer: Annotated[str, "The final answer with evidence citations"],
+        confidence: Annotated[str, "Confidence level: high, medium, low"] = "medium",
+        reasoning_summary: Annotated[str, "Brief summary of the reasoning process"] = "",
+        context_id: Annotated[str, "Session identifier"] = "default",
+    ) -> str:
+        return sync_finalize(answer, confidence, reasoning_summary, context_id)
+
+    return StructuredTool.from_function(
+        name="finalize",
+        description=(
+            "Mark the analysis as complete with a final evidence-backed answer. "
+            "Includes confidence level and supporting evidence summary."
+        ),
+        func=sync_finalize,
+        coroutine=async_finalize,
+    )
+
+
+# ===========================================================================
+# Status/Meta Tools (2)
+# ===========================================================================
+
+def _create_get_status_tool(manager: RLMSessionManager) -> BaseTool:
+    def sync_get_status(
+        context_id: Annotated[str, "Session identifier"] = "default",
+    ) -> str:
+        session = manager.get_session(context_id)
+        if session is None:
+            return f"No session '{context_id}'."
+
+        # Count user variables
+        ns = session.repl._namespace
+        helpers = set(session.repl._helpers.keys())
+        builtins_keys = {"__builtins__", "ctx", "line_number_base"}
+        user_vars = [
+            k for k in ns
+            if k not in helpers and k not in builtins_keys and not k.startswith("_")
+        ]
+
+        return (
+            f"Context: {context_id}\n"
+            f"Format: {session.meta.format.value}\n"
+            f"Size: {session.meta.size_chars:,} chars, {session.meta.size_lines:,} lines\n"
+            f"Tokens (est): ~{session.meta.size_tokens_estimate:,}\n"
+            f"Iterations: {session.iterations}\n"
+            f"Evidence: {len(session.evidence)} items\n"
+            f"Think steps: {len(session.think_history)}\n"
+            f"Tasks: {len(session.tasks)}\n"
+            f"Variables: {len(user_vars)} ({', '.join(sorted(user_vars)[:10])})"
+        )
+
+    async def async_get_status(
+        context_id: Annotated[str, "Session identifier"] = "default",
+    ) -> str:
+        return sync_get_status(context_id)
+
+    return StructuredTool.from_function(
+        name="get_status",
+        description="Get status and metadata for an RLM context session.",
+        func=sync_get_status,
+        coroutine=async_get_status,
+    )
+
+
+def _create_rlm_tasks_tool(manager: RLMSessionManager) -> BaseTool:
+    def sync_rlm_tasks(
+        action: Annotated[str, "Action: list, add, update, clear"] = "list",
+        context_id: Annotated[str, "Session identifier"] = "default",
+        description: Annotated[str, "Task description (for add)"] = "",
+        task_id: Annotated[str, "Task ID (for update)"] = "",
+        status: Annotated[str, "Status: todo, done, blocked (for update)"] = "todo",
+    ) -> str:
+        session = manager.get_or_create_session(context_id)
+
+        if action == "list":
+            if not session.tasks:
+                return "No tasks."
+            lines = []
+            for t in session.tasks:
+                lines.append(f"[{t['id']}] [{t['status']}] {t['title']}")
+            return "\n".join(lines)
+
+        elif action == "add":
+            if not description:
+                return "Provide a description for the task."
+            session.task_counter += 1
+            task = {
+                "id": session.task_counter,
+                "title": description,
+                "status": "todo",
+                "note": None,
+                "created_at": datetime.now().isoformat(),
+                "updated_at": None,
+            }
+            session.tasks.append(task)
+            return f"Task #{session.task_counter} created: {description}"
+
+        elif action == "update":
+            if not task_id:
+                return "Provide a task_id to update."
+            try:
+                tid = int(task_id)
+            except ValueError:
+                return f"Invalid task_id: {task_id}"
+            for t in session.tasks:
+                if t["id"] == tid:
+                    if status in ("todo", "done", "blocked"):
+                        t["status"] = status
+                    t["updated_at"] = datetime.now().isoformat()
+                    return f"Task #{tid} updated to '{status}'."
+            return f"Task #{tid} not found."
+
+        elif action == "clear":
+            count = len(session.tasks)
+            session.tasks.clear()
+            session.task_counter = 0
+            return f"Cleared {count} tasks."
+
+        return f"Unknown action: {action}"
+
+    async def async_rlm_tasks(
+        action: Annotated[str, "Action: list, add, update, clear"] = "list",
+        context_id: Annotated[str, "Session identifier"] = "default",
+        description: Annotated[str, "Task description (for add)"] = "",
+        task_id: Annotated[str, "Task ID (for update)"] = "",
+        status: Annotated[str, "Status: todo, done, blocked (for update)"] = "todo",
+    ) -> str:
+        return sync_rlm_tasks(action, context_id, description, task_id, status)
+
+    return StructuredTool.from_function(
+        name="rlm_tasks",
+        description="Manage lightweight task tracking within an RLM session.",
+        func=sync_rlm_tasks,
+        coroutine=async_rlm_tasks,
+    )
+
+
+# ===========================================================================
+# Recipe Tools (4)
+# ===========================================================================
+
+def _create_validate_recipe_tool(manager: RLMSessionManager) -> BaseTool:
+    def sync_validate_recipe(
+        recipe_json: Annotated[str, "Recipe payload as JSON string"],
+    ) -> str:
+        from aleph.mcp.recipes import validate_recipe
+
+        try:
+            recipe = json.loads(recipe_json)
+        except json.JSONDecodeError as exc:
+            return f"Invalid JSON: {exc}"
+
+        normalized, errors = validate_recipe(recipe)
+        if errors:
+            return "Validation errors:\n" + "\n".join(f"- {e}" for e in errors)
+        return f"Recipe valid. {len(normalized.get('steps', []))} steps."  # type: ignore[union-attr]
+
+    async def async_validate_recipe(
+        recipe_json: Annotated[str, "Recipe payload as JSON string"],
+    ) -> str:
+        return sync_validate_recipe(recipe_json)
+
+    return StructuredTool.from_function(
+        name="validate_recipe",
+        description="Validate an RLM recipe pipeline structure.",
+        func=sync_validate_recipe,
+        coroutine=async_validate_recipe,
+    )
+
+
+def _create_estimate_recipe_tool(manager: RLMSessionManager) -> BaseTool:
+    def sync_estimate_recipe(
+        recipe_json: Annotated[str, "Recipe payload as JSON string"],
+    ) -> str:
+        from aleph.mcp.recipes import estimate_recipe, validate_recipe
+
+        try:
+            recipe = json.loads(recipe_json)
+        except json.JSONDecodeError as exc:
+            return f"Invalid JSON: {exc}"
+
+        normalized, errors = validate_recipe(recipe)
+        if errors:
+            return "Validation errors:\n" + "\n".join(f"- {e}" for e in errors)
+
+        estimate = estimate_recipe(normalized)  # type: ignore[arg-type]
+        return json.dumps(estimate, indent=2)
+
+    async def async_estimate_recipe(
+        recipe_json: Annotated[str, "Recipe payload as JSON string"],
+    ) -> str:
+        return sync_estimate_recipe(recipe_json)
+
+    return StructuredTool.from_function(
+        name="estimate_recipe",
+        description="Estimate cost and shape for an RLM recipe pipeline.",
+        func=sync_estimate_recipe,
+        coroutine=async_estimate_recipe,
+    )
+
+
+def _create_run_recipe_tool(manager: RLMSessionManager) -> BaseTool:
+    def sync_run_recipe(
+        recipe_json: Annotated[str, "Recipe payload as JSON string"],
+        context_id: Annotated[str, "Session identifier"] = "default",
+    ) -> str:
+        from aleph.mcp.recipes import validate_recipe
+
+        try:
+            recipe = json.loads(recipe_json)
+        except json.JSONDecodeError as exc:
+            return f"Invalid JSON: {exc}"
+
+        normalized, errors = validate_recipe(recipe)
+        if errors:
+            return "Validation errors:\n" + "\n".join(f"- {e}" for e in errors)
+
+        session = manager.get_or_create_session(context_id)
+        session.iterations += 1
+
+        # Execute recipe steps sequentially against the REPL
+        steps = normalized.get("steps", [])  # type: ignore[union-attr]
+        results = []
+        for i, step in enumerate(steps):
+            op = step.get("op", "unknown")
+            try:
+                result = _execute_recipe_step(session, step)
+                results.append(f"Step {i+1} ({op}): {result}")
+            except Exception as exc:
+                results.append(f"Step {i+1} ({op}): ERROR - {exc}")
+                break
+
+        return "\n".join(results)
+
+    async def async_run_recipe(
+        recipe_json: Annotated[str, "Recipe payload as JSON string"],
+        context_id: Annotated[str, "Session identifier"] = "default",
+    ) -> str:
+        return sync_run_recipe(recipe_json, context_id)
+
+    return StructuredTool.from_function(
+        name="run_recipe",
+        description="Execute a validated RLM recipe pipeline against a context.",
+        func=sync_run_recipe,
+        coroutine=async_run_recipe,
+    )
+
+
+def _create_run_recipe_code_tool(manager: RLMSessionManager) -> BaseTool:
+    def sync_run_recipe_code(
+        code: Annotated[str, "Recipe DSL code to compile and execute"],
+        context_id: Annotated[str, "Session identifier"] = "default",
+    ) -> str:
+        session = manager.get_or_create_session(context_id)
+        session.iterations += 1
+
+        # Compile recipe DSL using the REPL (Recipe DSL helpers are injected)
+        compile_code = f"_recipe_result = as_recipe({code})"
+        result = session.repl.execute(compile_code)
+        if result.error:
+            return f"Recipe compile error: {result.error}"
+
+        recipe_val = session.repl.get_variable("_recipe_result")
+        if recipe_val is None:
+            return "Recipe compilation produced no result."
+
+        return f"Recipe compiled: {repr(recipe_val)[:2000]}"
+
+    async def async_run_recipe_code(
+        code: Annotated[str, "Recipe DSL code to compile and execute"],
+        context_id: Annotated[str, "Session identifier"] = "default",
+    ) -> str:
+        return sync_run_recipe_code(code, context_id)
+
+    return StructuredTool.from_function(
+        name="run_recipe_code",
+        description="Compile Recipe DSL code in the REPL and execute it.",
+        func=sync_run_recipe_code,
+        coroutine=async_run_recipe_code,
+    )
+
+
+def _execute_recipe_step(session: Any, step: dict[str, Any]) -> str:
+    """Execute a single recipe step against a session's REPL."""
+    op = step.get("op", "unknown")
+
+    if op == "search":
+        pattern = step.get("pattern", "")
+        search_fn = session.repl.get_helper("search")
+        if search_fn is None:
+            return "search helper unavailable"
+        results = search_fn(pattern, max_results=step.get("max_results", 50))
+        session.add_evidence(_Evidence(
+            source="search", line_range=None, pattern=pattern,
+            snippet=str(results[:3])[:300], note=f"recipe search: {len(results)} matches",
+        ))
+        return f"{len(results)} matches"
+
+    elif op == "peek":
+        start = step.get("start", 0)
+        end = step.get("end", 500)
+        peek_fn = session.repl.get_helper("peek")
+        if peek_fn is None:
+            return "peek helper unavailable"
+        result = peek_fn(start, end)
+        return f"{len(result)} chars"
+
+    elif op == "chunk":
+        chunk_fn = session.repl.get_helper("chunk")
+        if chunk_fn is None:
+            return "chunk helper unavailable"
+        chunks = chunk_fn(
+            chunk_size=step.get("chunk_size", 5000),
+            overlap=step.get("overlap", 200),
+        )
+        session.chunks = [{"index": i, "size": len(c)} for i, c in enumerate(chunks)]
+        return f"{len(chunks)} chunks created"
+
+    elif op == "assign":
+        name = step.get("name", "result")
+        value = step.get("value", "")
+        session.repl.set_variable(name, value)
+        return f"assigned {name}"
+
+    elif op == "finalize":
+        return "recipe finalized"
+
+    else:
+        return f"unsupported op: {op}"
+
+
+# ===========================================================================
+# Config Tool (1)
+# ===========================================================================
+
+def _create_configure_rlm_tool(manager: RLMSessionManager) -> BaseTool:
+    def sync_configure_rlm(
+        sandbox_timeout: Annotated[float, "Sandbox timeout in seconds (0 = no change)"] = 0,
+        context_policy: Annotated[str, "Context policy: trusted or isolated (empty = no change)"] = "",
+    ) -> str:
+        config = manager.update_config(
+            sandbox_timeout=sandbox_timeout if sandbox_timeout > 0 else None,
+            context_policy=context_policy if context_policy else None,
+        )
+        return f"Config updated: {json.dumps(config)}"
+
+    async def async_configure_rlm(
+        sandbox_timeout: Annotated[float, "Sandbox timeout in seconds (0 = no change)"] = 0,
+        context_policy: Annotated[str, "Context policy: trusted or isolated (empty = no change)"] = "",
+    ) -> str:
+        return sync_configure_rlm(sandbox_timeout, context_policy)
+
+    return StructuredTool.from_function(
+        name="configure_rlm",
+        description="Update RLM runtime configuration (sandbox timeout, context policy).",
+        func=sync_configure_rlm,
+        coroutine=async_configure_rlm,
+    )

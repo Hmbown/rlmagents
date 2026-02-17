@@ -1,6 +1,7 @@
 """Unit tests for main entry point."""
 
 import inspect
+from unittest.mock import patch
 
 import pytest
 
@@ -53,9 +54,13 @@ class TestLangSmithTeardownUrl:
 
     def test_thread_url_requires_all_components(self) -> None:
         """LangSmith link requires thread_id, project_name, and project_url."""
-        thread_url = build_langsmith_thread_url("abc123")
-        # Without LangSmith configured, should return None
-        assert thread_url is None
+        with patch(
+            "deepagents_cli.config.get_langsmith_project_name",
+            return_value=None,
+        ):
+            thread_url = build_langsmith_thread_url("abc123")
+            # Without LangSmith configured, should return None
+            assert thread_url is None
 
     def test_thread_url_not_shown_for_none_thread_id(self) -> None:
         """Guard condition: thread_url and thread_exists both needed."""

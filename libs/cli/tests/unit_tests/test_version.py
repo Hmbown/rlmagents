@@ -36,14 +36,14 @@ def test_cli_version_flag() -> None:
     )
     # argparse exits with 0 for --version
     assert result.returncode == 0
-    assert f"deepagents-cli {__version__}" in result.stdout
+    assert f"rlmagents-cli {__version__}" in result.stdout
 
 
 def test_version_slash_command_message_format() -> None:
     """Verify the /version slash command message format matches expected output."""
     # This tests the exact message format used in app.py's _handle_command for /version
-    expected_message = f"deepagents version: {__version__}"
-    assert "deepagents version:" in expected_message
+    expected_message = f"rlmagents version: {__version__}"
+    assert "rlmagents version:" in expected_message
     assert __version__ in expected_message
 
 

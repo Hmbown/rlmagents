@@ -4,6 +4,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 from unittest.mock import Mock, patch
 
+from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
+from langchain_core.messages import AIMessage
+
 if TYPE_CHECKING:
     from langchain.agents.middleware.types import AgentState
     from langchain.messages import ToolCall
@@ -368,7 +371,7 @@ class TestDefaultAgentName:
         """Guard against accidental renames of the default agent identifier.
 
         Other modules (main.py, commands.py) rely on this value matching
-        the directory name under `~/.deepagents/`.
+        the directory name under `~/.rlmagents/`.
         """
         assert DEFAULT_AGENT_NAME == "agent"
 
@@ -392,7 +395,10 @@ class TestListAgents:
         (other_dir / "AGENTS.md").touch()
 
         mock_settings = Mock()
-        mock_settings.user_deepagents_dir = agents_dir
+        mock_settings.list_agent_dirs.return_value = {
+            DEFAULT_AGENT_NAME: default_dir,
+            "researcher": other_dir,
+        }
 
         output: list[str] = []
 
@@ -429,7 +435,9 @@ class TestListAgents:
         (custom_dir / "AGENTS.md").touch()
 
         mock_settings = Mock()
-        mock_settings.user_deepagents_dir = agents_dir
+        mock_settings.list_agent_dirs.return_value = {
+            "researcher": custom_dir,
+        }
 
         output: list[str] = []
 
@@ -464,12 +472,13 @@ class TestCreateCliAgentSkillsSources:
         mock_settings = Mock()
         mock_settings.ensure_agent_dir.return_value = agent_dir
         mock_settings.ensure_user_skills_dir.return_value = skills_dir
-        mock_settings.get_project_skills_dir.return_value = None
+        mock_settings.get_project_skills_dirs.return_value = []
+        mock_settings.get_user_skills_dirs.return_value = [skills_dir]
         mock_settings.get_built_in_skills_dir.return_value = built_in_dir
-        mock_settings.get_user_agent_md_path.return_value = agent_dir / "AGENTS.md"
-        mock_settings.get_project_agent_md_path.return_value = None
-        mock_settings.get_user_agents_dir.return_value = tmp_path / "agents"
-        mock_settings.get_project_agents_dir.return_value = None
+        mock_settings.get_user_agent_md_paths.return_value = [agent_dir / "AGENTS.md"]
+        mock_settings.get_project_agent_md_paths.return_value = []
+        mock_settings.get_user_agents_dirs.return_value = [tmp_path / "agents"]
+        mock_settings.get_project_agents_dirs.return_value = []
         # Needed by get_system_prompt() which formats model identity
         mock_settings.model_name = None
         mock_settings.model_provider = None
@@ -491,7 +500,7 @@ class TestCreateCliAgentSkillsSources:
             patch("deepagents_cli.agent.settings", mock_settings),
             patch("deepagents_cli.agent.SkillsMiddleware", FakeSkillsMiddleware),
             patch("deepagents_cli.agent.MemoryMiddleware"),
-            patch("deepagents_cli.agent.create_deep_agent", return_value=mock_agent),
+            patch("deepagents_cli.agent.create_rlm_agent", return_value=mock_agent),
         ):
             create_cli_agent(
                 model="fake-model",
@@ -514,8 +523,18 @@ class TestCreateCliAgentHarnessDispatch:
 
     def _make_settings_mock(self, tmp_path: Path) -> Mock:
         mock_settings = Mock()
-        mock_settings.get_user_agents_dir.return_value = tmp_path / "agents"
-        mock_settings.get_project_agents_dir.return_value = None
+        agent_dir = tmp_path / "agent"
+        agent_dir.mkdir(parents=True, exist_ok=True)
+        mock_settings.ensure_agent_dir.return_value = agent_dir
+        mock_settings.get_user_agents_dirs.return_value = [tmp_path / "agents"]
+        mock_settings.get_project_agents_dirs.return_value = []
+        mock_settings.get_user_agent_md_paths.return_value = [agent_dir / "AGENTS.md"]
+        mock_settings.get_project_agent_md_paths.return_value = []
+        mock_settings.get_user_skills_dirs.return_value = []
+        mock_settings.get_project_skills_dirs.return_value = []
+        mock_settings.get_built_in_skills_dir.return_value = (
+            tmp_path / "built_in_skills"
+        )
         mock_settings.model_name = None
         mock_settings.model_provider = None
         mock_settings.model_context_limit = None
@@ -574,3 +593,31 @@ class TestCreateCliAgentHarnessDispatch:
 
         assert rlm_agent.with_config.called
         assert not deep_agent.with_config.called
+
+    def test_rlmagents_harness_passes_sub_query_model(self, tmp_path: Path) -> None:
+        """RLM harness should wire a chat model into sub_query()/llm_query()."""
+        mock_settings = self._make_settings_mock(tmp_path)
+        rlm_agent = Mock()
+        rlm_agent.with_config.return_value = rlm_agent
+        model = GenericFakeChatModel(messages=iter([AIMessage(content="ok")]))
+
+        with (
+            patch("deepagents_cli.agent.settings", mock_settings),
+            patch("deepagents_cli.agent.list_subagents", return_value=[]),
+            patch("deepagents_cli.agent.create_deep_agent"),
+            patch(
+                "deepagents_cli.agent.create_rlm_agent",
+                return_value=rlm_agent,
+            ) as mock_create_rlm_agent,
+        ):
+            create_cli_agent(
+                model=model,
+                assistant_id="agent",
+                harness="rlmagents",
+                enable_memory=False,
+                enable_skills=False,
+                enable_shell=False,
+            )
+
+        assert mock_create_rlm_agent.call_args is not None
+        assert mock_create_rlm_agent.call_args.kwargs["sub_query_model"] is model

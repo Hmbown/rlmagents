@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import inspect
 import re
+import warnings
 from collections.abc import Callable, Sequence
 from functools import lru_cache
 from importlib.metadata import PackageNotFoundError, version as _get_package_version
@@ -202,6 +203,51 @@ def _coding_response_format() -> dict[str, Any]:
     }
 
 
+def _model_hint_text(
+    model_input: str | BaseChatModel | None,
+    resolved_model: BaseChatModel | None = None,
+) -> str:
+    """Build lowercase text hints for model/provider capability checks."""
+    hints: list[str] = []
+
+    for candidate in (model_input, resolved_model):
+        if isinstance(candidate, str):
+            hints.append(candidate.lower())
+            continue
+        if candidate is None:
+            continue
+
+        hints.append(type(candidate).__name__.lower())
+        for attr_name in (
+            "model_name",
+            "model",
+            "name",
+            "provider",
+            "openai_api_base",
+            "base_url",
+            "api_base",
+        ):
+            attr_value = getattr(candidate, attr_name, None)
+            if isinstance(attr_value, str):
+                hints.append(attr_value.lower())
+
+    return " ".join(hints)
+
+
+def _supports_default_coding_response_format(
+    model_input: str | BaseChatModel | None,
+    resolved_model: BaseChatModel | None = None,
+) -> bool:
+    """Return whether default coding json_schema output should be auto-enabled."""
+    model_hints = _model_hint_text(model_input, resolved_model)
+
+    # DeepSeek OpenAI-compatible endpoints currently reject this schema shape.
+    if "deepseek" in model_hints:
+        return False
+
+    return True
+
+
 @lru_cache(maxsize=1)
 def _assert_langchain_compatibility() -> None:
     """Fail fast if the installed langchain API is unsupported."""
@@ -260,6 +306,37 @@ def _build_create_agent_kwargs(
     return kwargs
 
 
+def _build_rlm_middleware(
+    *,
+    sandbox_timeout: float,
+    context_policy: str,
+    auto_load_threshold: int,
+    rlm_system_prompt: str | None,
+    sub_query_model: BaseChatModel | None,
+    sub_query_timeout: float,
+) -> RLMMiddleware:
+    """Build a consistently configured RLM middleware instance."""
+    return RLMMiddleware(
+        sandbox_timeout=sandbox_timeout,
+        context_policy=context_policy,
+        auto_load_threshold=auto_load_threshold,
+        system_prompt=rlm_system_prompt,
+        sub_query_model=sub_query_model,
+        sub_query_timeout=sub_query_timeout,
+    )
+
+
+def _assert_has_rlm_middleware(
+    middleware: Sequence[AgentMiddleware],
+    *,
+    stack_name: str,
+) -> None:
+    """Fail fast if a middleware stack is missing `RLMMiddleware`."""
+    if any(isinstance(layer, RLMMiddleware) for layer in middleware):
+        return
+    raise RuntimeError(f"RLM invariant violation: `{stack_name}` middleware stack is missing RLMMiddleware.")
+
+
 def get_default_model() -> ChatAnthropic:
     """Get the default model for rlmagents."""
     return ChatAnthropic(
@@ -290,6 +367,8 @@ def create_rlm_agent(
     sandbox_timeout: float = 180.0,
     context_policy: str = "trusted",
     auto_load_threshold: int = 10_000,
+    sub_query_model: BaseChatModel | None = None,
+    sub_query_timeout: float = 120.0,
     rlm_system_prompt: str | None = None,
     enable_rlm_in_subagents: bool = True,
 ) -> CompiledStateGraph:
@@ -318,13 +397,19 @@ def create_rlm_agent(
         sandbox_timeout: RLM REPL timeout.
         context_policy: RLM context policy.
         auto_load_threshold: Auto-load threshold for large results.
+        sub_query_model: Optional model used by RLM `sub_query()`/`llm_query()`.
+        sub_query_timeout: Timeout in seconds for recursive sub-query calls.
         rlm_system_prompt: Custom RLM workflow prompt.
-        enable_rlm_in_subagents: Enable RLM in sub-agents.
+        enable_rlm_in_subagents: Deprecated compatibility flag.
+
+            RLM is always enabled for sub-agents; passing `False` has no effect.
 
     Returns:
         Compiled LangGraph agent.
     """
     _assert_langchain_compatibility()
+
+    model_input = model
 
     # Resolve model
     if model is None:
@@ -343,12 +428,22 @@ def create_rlm_agent(
     # Resolve backend
     resolved_backend = backend if backend is not None else StateBackend
 
+    if not enable_rlm_in_subagents:
+        warnings.warn(
+            "`enable_rlm_in_subagents=False` is deprecated and ignored; "
+            "RLM is always enabled in sub-agents.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+
     # Create RLM middleware
-    rlm_mw = RLMMiddleware(
+    rlm_mw = _build_rlm_middleware(
         sandbox_timeout=sandbox_timeout,
         context_policy=context_policy,
         auto_load_threshold=auto_load_threshold,
-        system_prompt=rlm_system_prompt,
+        rlm_system_prompt=rlm_system_prompt,
+        sub_query_model=sub_query_model,
+        sub_query_timeout=sub_query_timeout,
     )
 
     # Build main agent middleware stack
@@ -390,16 +485,16 @@ def create_rlm_agent(
             subagent_middleware: list[AgentMiddleware] = [
                 TodoListMiddleware(),
             ]
-
-            if enable_rlm_in_subagents:
-                subagent_middleware.append(
-                    RLMMiddleware(
-                        sandbox_timeout=sandbox_timeout,
-                        context_policy=context_policy,
-                        auto_load_threshold=auto_load_threshold,
-                        system_prompt=rlm_system_prompt,
-                    )
+            subagent_middleware.append(
+                _build_rlm_middleware(
+                    sandbox_timeout=sandbox_timeout,
+                    context_policy=context_policy,
+                    auto_load_threshold=auto_load_threshold,
+                    rlm_system_prompt=rlm_system_prompt,
+                    sub_query_model=sub_query_model,
+                    sub_query_timeout=sub_query_timeout,
                 )
+            )
 
             subagent_middleware.extend([
                 FilesystemMiddleware(backend=resolved_backend),
@@ -431,21 +526,26 @@ def create_rlm_agent(
                 processed_spec["system_prompt"] = spec["prompt"]
             elif "system_prompt" not in processed_spec:
                 processed_spec["system_prompt"] = spec.get("description", "You are a helpful assistant.")
+            _assert_has_rlm_middleware(
+                processed_spec["middleware"],
+                stack_name=f"subagent:{processed_spec['name']}",
+            )
             processed_subagents.append(processed_spec)
 
     # Build general-purpose sub-agent
     gp_middleware: list[AgentMiddleware] = [
         TodoListMiddleware(),
     ]
-    if enable_rlm_in_subagents:
-        gp_middleware.append(
-            RLMMiddleware(
-                sandbox_timeout=sandbox_timeout,
-                context_policy=context_policy,
-                auto_load_threshold=auto_load_threshold,
-                system_prompt=rlm_system_prompt,
-            )
+    gp_middleware.append(
+        _build_rlm_middleware(
+            sandbox_timeout=sandbox_timeout,
+            context_policy=context_policy,
+            auto_load_threshold=auto_load_threshold,
+            rlm_system_prompt=rlm_system_prompt,
+            sub_query_model=sub_query_model,
+            sub_query_timeout=sub_query_timeout,
         )
+    )
     gp_middleware.extend([
         FilesystemMiddleware(backend=resolved_backend),
         SummarizationMiddleware(
@@ -463,6 +563,7 @@ def create_rlm_agent(
         gp_middleware.append(SkillsMiddleware(backend=resolved_backend, sources=skills))
     if interrupt_on:
         gp_middleware.append(HumanInTheLoopMiddleware(interrupt_on=interrupt_on))
+    _assert_has_rlm_middleware(gp_middleware, stack_name="subagent:general-purpose")
 
     general_purpose_spec: SubAgent = {
         **GENERAL_PURPOSE_SUBAGENT,
@@ -509,6 +610,8 @@ def create_rlm_agent(
     if interrupt_on is not None:
         agent_middleware.append(HumanInTheLoopMiddleware(interrupt_on=interrupt_on))
 
+    _assert_has_rlm_middleware(agent_middleware, stack_name="main")
+
     # Combine system prompt
     if system_prompt is None:
         final_prompt: str | SystemMessage = BASE_AGENT_PROMPT
@@ -521,7 +624,11 @@ def create_rlm_agent(
     else:
         final_prompt = system_prompt + "\n\n" + BASE_AGENT_PROMPT
 
-    if response_format is None and _is_coding_task(final_prompt):
+    if (
+        response_format is None
+        and _is_coding_task(final_prompt)
+        and _supports_default_coding_response_format(model_input, model)
+    ):
         response_format = _coding_response_format()
 
     agent_kwargs = _build_create_agent_kwargs(

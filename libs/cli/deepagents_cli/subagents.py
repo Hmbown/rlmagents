@@ -4,7 +4,7 @@ Loads custom subagent definitions from the filesystem. Subagents are defined
 as markdown files with YAML frontmatter in the agents/ directory.
 
 Directory structure:
-    .deepagents/agents/{agent_name}/AGENTS.md
+    .rlmagents/agents/{agent_name}/AGENTS.md
 
 Example file (researcher/AGENTS.md):
     ---

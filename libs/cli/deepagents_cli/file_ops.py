@@ -8,14 +8,16 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
-from deepagents.backends.utils import perform_string_replacement
+from rlmagents._harness.backends.utils import (
+    perform_string_replacement,  # noqa: PLC2701
+)
 
 from deepagents_cli.config import settings
 
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from deepagents.backends.protocol import BackendProtocol
+    from rlmagents._harness.backends.protocol import BackendProtocol
 
 FileOpStatus = Literal["pending", "success", "error"]
 

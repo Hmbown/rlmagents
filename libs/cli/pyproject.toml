@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "deepagents-cli"
+name = "rlmagents-cli"
 version = "0.0.21"
-description = "Terminal interface for Deep Agents - interactive AI agent with file operations, shell access, and sub-agent capabilities."
+description = "Terminal interface for RLMAgents - interactive AI agent with file operations, shell access, and sub-agent capabilities."
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.11,<4.0"
@@ -26,7 +26,6 @@ classifiers = [
 ]
 dependencies = [
     # Framework
-    "deepagents==0.4.1",
     "rlmagents==0.1.0",
     "langchain>=1.2.10,<2.0.0",
     "langgraph-checkpoint-sqlite>=3.0.0,<4.0.0",
@@ -81,22 +80,26 @@ perplexity = ["langchain-perplexity>=1.0.0,<2.0.0"]
 vertexai = ["langchain-google-vertexai>=3.0.0,<4.0.0"]
 xai = ["langchain-xai>=1.0.0,<2.0.0"]
 all-providers = [
-    "deepagents-cli[anthropic,bedrock,cohere,deepseek,fireworks,google-genai,groq,huggingface,ibm,mistralai,nvidia,ollama,openai,perplexity,vertexai,xai]",
+    "rlmagents-cli[anthropic,bedrock,cohere,deepseek,fireworks,google-genai,groq,huggingface,ibm,mistralai,nvidia,ollama,openai,perplexity,vertexai,xai]",
 ]
 
 [project.scripts]
+rlmagents = "deepagents_cli:cli_main"
+rlmagents-cli = "deepagents_cli:cli_main"
 deepagents = "deepagents_cli:cli_main"
 deepagents-cli = "deepagents_cli:cli_main"
 
 [project.urls]
-Homepage = "https://docs.langchain.com/oss/python/deepagents/overview"
-Documentation = "https://reference.langchain.com/python/deepagents/"
-Repository = "https://github.com/langchain-ai/deepagents"
-Issues = "https://github.com/langchain-ai/deepagents/issues"
-Changelog = "https://github.com/langchain-ai/deepagents/blob/main/libs/cli/CHANGELOG.md"
-Twitter = "https://x.com/LangChain"
+Homepage = "https://github.com/Hmbown/rlmagents"
+Documentation = "https://github.com/Hmbown/rlmagents/tree/main/libs/cli"
+Repository = "https://github.com/Hmbown/rlmagents"
+Issues = "https://github.com/Hmbown/rlmagents/issues"
+Changelog = "https://github.com/Hmbown/rlmagents/blob/main/libs/cli/CHANGELOG.md"
 
 [dependency-groups]
+dev = [
+    "langchain-deepseek>=1.0.1",
+]
 test = [
     "build>=1.0.0,<2.0.0",
     "ruff>=0.14.0,<1.0.0",
@@ -121,11 +124,10 @@ packages = ["deepagents_cli"]
 "deepagents_cli/*.tcss" = "deepagents_cli/"
 
 [tool.uv.sources]
-deepagents = { path = "../deepagents", editable = true }
 rlmagents = { path = "../rlmagents", editable = true }
 
 [tool.ty.environment]
-extra-paths = ["../deepagents", "../rlmagents"]
+extra-paths = ["../rlmagents"]
 
 [tool.ty.rules]
 # https://docs.astral.sh/ty/rules/

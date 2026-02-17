@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from langchain_core.messages import ToolMessage
+import pytest
+from langchain_core.messages import AIMessage, ToolMessage
 
 from rlmagents.middleware.rlm import _RLM_TOOL_NAMES, RLMMiddleware
 from rlmagents.session_manager import RLMSessionManager
@@ -122,6 +123,24 @@ class TestSessionManager:
         config = sm.update_config(sandbox_timeout=60.0, context_policy="isolated")
         assert config["sandbox_timeout"] == 60.0
         assert config["context_policy"] == "isolated"
+
+    @pytest.mark.asyncio
+    async def test_sub_query_exec_async_uses_loop_bridge(self) -> None:
+        """`sub_query()` should work in async REPL execution without manual loop wiring."""
+
+        class _AsyncStubModel:
+            async def ainvoke(self, prompt: str, **kwargs: object) -> AIMessage:
+                del kwargs
+                return AIMessage(content=f"stub:{prompt}")
+
+        sm = RLMSessionManager(sub_query_model=_AsyncStubModel())  # type: ignore[arg-type]
+        sm.create_session("data", context_id="sq-loop")
+        session = sm.get_session("sq-loop")
+        assert session is not None
+
+        result = await session.repl.execute_async("print(sub_query('ping'))")
+        assert result.error is None
+        assert "stub:ping" in result.stdout
 
 
 class TestREPLExecution:
@@ -272,6 +291,27 @@ class TestRLMTools:
         tools["load_context"].invoke({"content": "hello world", "context_id": "py"})
         result = tools["exec_python"].invoke({"code": "print(len(ctx))", "context_id": "py"})
         assert "11" in result
+
+    @pytest.mark.asyncio
+    async def test_exec_python_async_sub_query(self) -> None:
+        """Async tool path should support sub_query() without manual loop setup."""
+
+        class _AsyncStubModel:
+            async def ainvoke(self, prompt: str, **kwargs: object) -> AIMessage:
+                del prompt, kwargs
+                return AIMessage(content="subquery-ok")
+
+        from rlmagents.middleware._tools import _build_rlm_tools
+
+        sm = RLMSessionManager(sub_query_model=_AsyncStubModel())  # type: ignore[arg-type]
+        tools = {t.name: t for t in _build_rlm_tools(sm)}
+        tools["load_context"].invoke({"content": "hello world", "context_id": "py"})
+
+        result = await tools["exec_python"].ainvoke(
+            {"code": "print(sub_query('ping'))", "context_id": "py"}
+        )
+        assert "subquery-ok" in result
+        assert "ERROR:" not in result
 
     def test_think_and_evaluate(self):
         sm, tools = self._build_tools()

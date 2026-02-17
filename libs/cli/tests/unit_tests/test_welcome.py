@@ -34,12 +34,14 @@ def _extract_links(banner: Text, text_start: int, text_end: int) -> list[str]:
 def _make_banner(
     thread_id: str | None = None,
     project_name: str | None = None,
+    harness: str = "rlmagents",
 ) -> WelcomeBanner:
     """Create a `WelcomeBanner` with all env vars cleared.
 
     Args:
         thread_id: Optional thread ID to display.
         project_name: If set, simulates LangSmith being configured.
+        harness: Agent harness runtime.
 
     Returns:
         A `WelcomeBanner` instance ready for testing.
@@ -51,7 +53,7 @@ def _make_banner(
         env["LANGSMITH_PROJECT"] = project_name
 
     with patch.dict("os.environ", env, clear=True):
-        return WelcomeBanner(thread_id=thread_id)
+        return WelcomeBanner(thread_id=thread_id, harness=harness)
 
 
 class TestBuildBannerThreadLink:
@@ -83,7 +85,7 @@ class TestBuildBannerThreadLink:
         thread_id_end = thread_id_start + len("99999")
         links = _extract_links(banner, thread_id_start, thread_id_end)
         assert links, "Expected a link style on the thread ID text"
-        assert links[0] == f"{project_url}/t/99999?utm_source=deepagents-cli"
+        assert links[0] == f"{project_url}/t/99999?utm_source=rlmagents-cli"
 
     def test_no_thread_line_when_thread_id_is_none(self) -> None:
         """Banner should not contain a thread line when `thread_id` is `None`."""
@@ -98,6 +100,12 @@ class TestBuildBannerThreadLink:
             project_url="https://smith.langchain.com/o/org/projects/p/abc123"
         )
         assert "Thread:" not in banner.plain
+
+    def test_shows_rlm_marker_when_rlmagents_harness(self) -> None:
+        """Banner should show an explicit RLM marker when rlmagents is active."""
+        widget = _make_banner(thread_id="abc123", harness="rlmagents")
+        banner = widget._build_banner(project_url=None)
+        assert "RLM harness active" in banner.plain
 
     def test_trailing_slash_on_project_url_normalized(self) -> None:
         """Trailing slash on `project_url` should not cause double-slash in URL."""
@@ -126,7 +134,7 @@ class TestBuildBannerThreadLink:
         thread_id_end = thread_id_start + len("77777")
         links = _extract_links(banner, thread_id_start, thread_id_end)
         assert links
-        assert links[0] == f"{project_url}/t/77777?utm_source=deepagents-cli"
+        assert links[0] == f"{project_url}/t/77777?utm_source=rlmagents-cli"
 
 
 class TestUpdateThreadId:
@@ -162,7 +170,7 @@ class TestUpdateThreadId:
         thread_end = thread_start + len("new_id")
         links = _extract_links(banner, thread_start, thread_end)
         assert links
-        assert links[0] == f"{project_url}/t/new_id?utm_source=deepagents-cli"
+        assert links[0] == f"{project_url}/t/new_id?utm_source=rlmagents-cli"
 
 
 class TestBuildBannerReturnType:

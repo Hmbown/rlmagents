@@ -652,9 +652,9 @@ class TestListSkillsBuiltIn:
         assert creator["source"] == "built-in"
         assert len(creator["description"]) > 0
         assert creator["license"] == "MIT"
-        assert creator["compatibility"] == "designed for deepagents-cli"
-        assert "deepagents-cli-version" in creator["metadata"]
-        assert creator["metadata"]["deepagents-cli-version"] == _cli_version
+        assert creator["compatibility"] == "designed for rlmagents-cli"
+        assert "rlmagents-cli-version" in creator["metadata"]
+        assert creator["metadata"]["rlmagents-cli-version"] == _cli_version
 
     def test_oserror_in_one_source_does_not_break_others(self, tmp_path: Path) -> None:
         """An OSError in one source should not prevent other sources from loading.

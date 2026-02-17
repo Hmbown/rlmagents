@@ -238,14 +238,14 @@ def format_tool_message_content(content: Any) -> str:
 
 
 def show_help() -> None:
-    """Show top-level help information for the deepagents CLI."""
+    """Show top-level help information for the rlmagents CLI."""
     install_type = " (local)" if _is_editable_install() else ""
     banner_color = (
         COLORS["primary_dev"] if _is_editable_install() else COLORS["primary"]
     )
     console.print()
     console.print(
-        f"[bold {banner_color}]deepagents-cli[/bold {banner_color}]"
+        f"[bold {banner_color}]rlmagents-cli[/bold {banner_color}]"
         f" v{__version__}{install_type}"
     )
     console.print()
@@ -256,19 +256,19 @@ def show_help() -> None:
     console.print()
     console.print("[bold]Usage:[/bold]", style=COLORS["primary"])
     console.print(
-        "  deepagents [OPTIONS]                           Start interactive thread"
+        "  rlmagents [OPTIONS]                           Start interactive thread"
     )
     console.print(
-        "  deepagents list                                List all available agents"
+        "  rlmagents list                                List all available agents"
     )
     console.print(
-        "  deepagents reset --agent AGENT [--target SRC]  Reset an agent's prompt"
+        "  rlmagents reset --agent AGENT [--target SRC]  Reset an agent's prompt"
     )
     console.print(
-        "  deepagents skills <list|create|info>           Manage agent skills"
+        "  rlmagents skills <list|create|info>           Manage agent skills"
     )
     console.print(
-        "  deepagents threads <list|delete>               Manage conversation threads"
+        "  rlmagents threads <list|delete>               Manage conversation threads"
     )
     console.print()
 
@@ -277,7 +277,10 @@ def show_help() -> None:
         "  -r, --resume [ID]          Resume thread: -r for most recent, -r ID for specific"  # noqa: E501
     )
     console.print("  -a, --agent NAME           Agent to use (e.g., coder, researcher)")
-    console.print("  --harness TYPE             Agent harness: deepagents or rlmagents")
+    console.print(
+        "  --harness TYPE             Agent harness: rlmagents; "
+        "deepagents compatibility alias"
+    )
     console.print("  -M, --model MODEL          Model to use (e.g., gpt-4o)")
     console.print("  -m, --message TEXT         Initial prompt to auto-submit on start")
     console.print(
@@ -296,21 +299,21 @@ def show_help() -> None:
     )
     console.print("  --default-model [MODEL]    Set, show, or manage the default model")
     console.print("  --clear-default-model      Clear the default model")
-    console.print("  -v, --version              Show deepagents CLI version")
+    console.print("  -v, --version              Show rlmagents CLI version")
     console.print("  -h, --help                 Show this help message and exit")
     console.print()
 
     console.print("[bold]Non-Interactive Mode:[/bold]", style=COLORS["primary"])
     console.print(
-        "  deepagents -n 'Summarize README.md'     # Run task (no local shell access)",
+        "  rlmagents -n 'Summarize README.md'     # Run task (no local shell access)",
         style=COLORS["dim"],
     )
     console.print(
-        "  deepagents -n 'List files' --shell-allow-list recommended  # Use safe commands",  # noqa: E501
+        "  rlmagents -n 'List files' --shell-allow-list recommended  # Use safe commands",  # noqa: E501
         style=COLORS["dim"],
     )
     console.print(
-        "  deepagents -n 'Search logs' --shell-allow-list ls,cat,grep # Specify list",
+        "  rlmagents -n 'Search logs' --shell-allow-list ls,cat,grep # Specify list",
         style=COLORS["dim"],
     )
     console.print()
@@ -323,10 +326,10 @@ def show_list_help() -> None:
     """
     console.print()
     console.print("[bold]Usage:[/bold]", style=COLORS["primary"])
-    console.print("  deepagents list")
+    console.print("  rlmagents list")
     console.print()
     console.print(
-        "List all agents found in ~/.deepagents/. Each agent has its own",
+        "List all agents found in ~/.rlmagents/. Each agent has its own",
     )
     console.print(
         "AGENTS.md system prompt and separate thread history.",
@@ -341,7 +344,7 @@ def show_reset_help() -> None:
     """Show help information for the `reset` subcommand."""
     console.print()
     console.print("[bold]Usage:[/bold]", style=COLORS["primary"])
-    console.print("  deepagents reset --agent NAME [--target SRC]")
+    console.print("  rlmagents reset --agent NAME [--target SRC]")
     console.print()
     console.print(
         "Restore an agent's AGENTS.md to the built-in default, or copy",
@@ -359,8 +362,8 @@ def show_reset_help() -> None:
     console.print("  -h, --help        Show this help message")
     console.print()
     console.print("[bold]Examples:[/bold]", style=COLORS["primary"])
-    console.print("  deepagents reset --agent coder")
-    console.print("  deepagents reset --agent coder --target researcher")
+    console.print("  rlmagents reset --agent coder")
+    console.print("  rlmagents reset --agent coder --target researcher")
     console.print()
 
 
@@ -372,7 +375,7 @@ def show_skills_help() -> None:
     """
     console.print()
     console.print("[bold]Usage:[/bold]", style=COLORS["primary"])
-    console.print("  deepagents skills <command> [options]")
+    console.print("  rlmagents skills <command> [options]")
     console.print()
     console.print("[bold]Commands:[/bold]", style=COLORS["primary"])
     console.print("  list|ls           List all available skills")
@@ -386,14 +389,16 @@ def show_skills_help() -> None:
         "[dim]Skills are loaded from these directories "
         "(highest precedence first):\n"
         "  1. .agents/skills/                 project skills\n"
-        "  2. .deepagents/skills/             project skills (alias)\n"
-        "  3. ~/.agents/skills/               user skills\n"
-        "  4. ~/.deepagents/<agent>/skills/   user skills (alias)\n"
-        "  5. <package>/built_in_skills/      built-in skills[/dim]",
+        "  2. .rlmagents/skills/              project skills (primary)\n"
+        "  3. .deepagents/skills/             project skills (legacy alias)\n"
+        "  4. ~/.agents/skills/               user skills\n"
+        "  5. ~/.rlmagents/<agent>/skills/    user skills (primary)\n"
+        "  6. .deepagents/<agent>/skills/     user skills (legacy alias)\n"
+        "  7. <package>/built_in_skills/      built-in skills[/dim]",
         style=COLORS["dim"],
     )
     console.print(
-        "\n[dim]Create your first skill:\n  deepagents skills create my-skill[/dim]",
+        "\n[dim]Create your first skill:\n  rlmagents skills create my-skill[/dim]",
         style=COLORS["dim"],
     )
     console.print()
@@ -403,7 +408,7 @@ def show_skills_list_help() -> None:
     """Show help information for the `skills list` subcommand."""
     console.print()
     console.print("[bold]Usage:[/bold]", style=COLORS["primary"])
-    console.print("  deepagents skills list [options]")
+    console.print("  rlmagents skills list [options]")
     console.print()
     console.print("[bold]Options:[/bold]", style=COLORS["primary"])
     console.print("  --agent NAME      Agent identifier (default: agent)")
@@ -416,7 +421,7 @@ def show_skills_create_help() -> None:
     """Show help information for the `skills create` subcommand."""
     console.print()
     console.print("[bold]Usage:[/bold]", style=COLORS["primary"])
-    console.print("  deepagents skills create <name> [options]")
+    console.print("  rlmagents skills create <name> [options]")
     console.print()
     console.print("[bold]Options:[/bold]", style=COLORS["primary"])
     console.print("  --agent NAME      Agent identifier (default: agent)")
@@ -426,8 +431,8 @@ def show_skills_create_help() -> None:
     console.print("  -h, --help        Show this help message")
     console.print()
     console.print("[bold]Examples:[/bold]", style=COLORS["primary"])
-    console.print("  deepagents skills create web-research")
-    console.print("  deepagents skills create my-skill --project")
+    console.print("  rlmagents skills create web-research")
+    console.print("  rlmagents skills create my-skill --project")
     console.print()
 
 
@@ -435,7 +440,7 @@ def show_skills_info_help() -> None:
     """Show help information for the `skills info` subcommand."""
     console.print()
     console.print("[bold]Usage:[/bold]", style=COLORS["primary"])
-    console.print("  deepagents skills info <name> [options]")
+    console.print("  rlmagents skills info <name> [options]")
     console.print()
     console.print("[bold]Options:[/bold]", style=COLORS["primary"])
     console.print("  --agent NAME      Agent identifier (default: agent)")
@@ -452,7 +457,7 @@ def show_threads_help() -> None:
     """
     console.print()
     console.print("[bold]Usage:[/bold]", style=COLORS["primary"])
-    console.print("  deepagents threads <command> [options]")
+    console.print("  rlmagents threads <command> [options]")
     console.print()
     console.print("[bold]Commands:[/bold]", style=COLORS["primary"])
     console.print("  list|ls           List all threads")
@@ -462,8 +467,8 @@ def show_threads_help() -> None:
     console.print("  -h, --help        Show this help message")
     console.print()
     console.print("[bold]Examples:[/bold]", style=COLORS["primary"])
-    console.print("  deepagents threads list")
-    console.print("  deepagents threads delete abc123")
+    console.print("  rlmagents threads list")
+    console.print("  rlmagents threads delete abc123")
     console.print()
 
 
@@ -471,13 +476,13 @@ def show_threads_delete_help() -> None:
     """Show help information for the `threads delete` subcommand."""
     console.print()
     console.print("[bold]Usage:[/bold]", style=COLORS["primary"])
-    console.print("  deepagents threads delete <ID>")
+    console.print("  rlmagents threads delete <ID>")
     console.print()
     console.print("[bold]Options:[/bold]", style=COLORS["primary"])
     console.print("  -h, --help        Show this help message")
     console.print()
     console.print("[bold]Examples:[/bold]", style=COLORS["primary"])
-    console.print("  deepagents threads delete abc123")
+    console.print("  rlmagents threads delete abc123")
     console.print()
 
 
@@ -485,7 +490,7 @@ def show_threads_list_help() -> None:
     """Show help information for the `threads list` subcommand."""
     console.print()
     console.print("[bold]Usage:[/bold]", style=COLORS["primary"])
-    console.print("  deepagents threads list [options]")
+    console.print("  rlmagents threads list [options]")
     console.print()
     console.print("[bold]Options:[/bold]", style=COLORS["primary"])
     console.print("  --agent NAME      Filter by agent name")
@@ -493,7 +498,7 @@ def show_threads_list_help() -> None:
     console.print("  -h, --help        Show this help message")
     console.print()
     console.print("[bold]Examples:[/bold]", style=COLORS["primary"])
-    console.print("  deepagents threads list")
-    console.print("  deepagents threads list --agent mybot")
-    console.print("  deepagents threads list --limit 50")
+    console.print("  rlmagents threads list")
+    console.print("  rlmagents threads list --agent mybot")
+    console.print("  rlmagents threads list --limit 50")
     console.print()

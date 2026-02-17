@@ -12,8 +12,9 @@ _MODEL_INIT_CACHE: dict[str, tuple[bool, Any | str]] = {}
 _MODEL_ALIAS_MAP = {
     "deepseek": "deepseek-chat",
     "deepseek-chat": "deepseek-chat",
-    "minimax": "MiniMax-Text-01",
-    "minimax-text-01": "MiniMax-Text-01",
+    "minimax": "minimax-m2.5",
+    "minimax-m2.5": "minimax-m2.5",
+    "minimax-text-01": "minimax-m2.5",
 }
 
 
@@ -132,8 +133,8 @@ def create_configured_agent(**kwargs: Any) -> Any:
     )
 
     sub_query_model = _init_model(
-        model_id="MiniMax-Text-01",
-        model_alias="MiniMax-Text-01",
+        model_id="minimax-m2.5",
+        model_alias="minimax-m2.5",
         api_key=os.environ["MINIMAX_API_KEY"],
         base_url="https://api.minimaxi.chat/v1",
     )

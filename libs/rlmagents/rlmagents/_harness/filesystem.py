@@ -1,10 +1,15 @@
 """Middleware for providing filesystem tools to an agent."""
 # ruff: noqa: E501
 
+import asyncio
 import base64
+import io
 import json
 import os
 import re
+import shutil
+import subprocess
+import tempfile
 from collections.abc import Awaitable, Callable, Sequence
 from pathlib import Path
 from typing import Annotated, Literal, NotRequired
@@ -45,6 +50,7 @@ LINE_NUMBER_WIDTH = 6
 DEFAULT_READ_OFFSET = 0
 DEFAULT_READ_LIMIT = 100
 IMAGE_EXTENSIONS = frozenset({".png", ".jpg", ".jpeg", ".gif", ".webp"})
+PDF_EXTENSIONS = frozenset({".pdf"})
 IMAGE_MEDIA_TYPES = {
     ".png": "image/png",
     ".jpg": "image/jpeg",
@@ -52,6 +58,9 @@ IMAGE_MEDIA_TYPES = {
     ".gif": "image/gif",
     ".webp": "image/webp",
 }
+PDF_EXTRACTION_PREFIX = (
+    "[Extracted text from PDF. Content may be incomplete for scanned/image-only pages.]\n\n"
+)
 
 
 # Template for truncation message in read_file
@@ -87,6 +96,155 @@ _RISKY_COMMAND_PATTERNS = (
     re.compile(r"\bwget\b.+\|\s*(bash|sh)\b"),
     re.compile(r"\bchmod\s+-R\s+777\b"),
 )
+
+
+def _format_text_read_output(
+    *,
+    text: str,
+    file_path: str,
+    offset: int,
+    limit: int,
+) -> str:
+    """Format text content using read_file pagination semantics."""
+    if not text.strip():
+        return (
+            f"Error: No text could be extracted from PDF '{file_path}'. "
+            "The document may be scanned/image-only. Use OCR or provide a text export."
+        )
+
+    lines = text.splitlines()
+    if offset >= len(lines):
+        return f"Error: Line offset {offset} exceeds file length ({len(lines)} lines)"
+
+    selected_lines = lines[offset : offset + limit]
+    body = format_content_with_line_numbers(selected_lines, start_line=offset + 1)
+    return PDF_EXTRACTION_PREFIX + body
+
+
+def _extract_pdf_text_with_pypdf(pdf_bytes: bytes) -> str | None:
+    """Attempt PDF text extraction using pypdf if installed."""
+    try:
+        from pypdf import PdfReader  # type: ignore[import-not-found]
+    except ImportError:
+        return None
+
+    try:
+        reader = PdfReader(io.BytesIO(pdf_bytes))
+        page_text: list[str] = []
+        for page in reader.pages:
+            page_text.append(page.extract_text() or "")
+        return "\n".join(page_text)
+    except (ValueError, TypeError, OSError):
+        return None
+
+
+def _extract_pdf_text_with_pdftotext(pdf_bytes: bytes) -> str | None:
+    """Attempt PDF text extraction using the pdftotext CLI."""
+    pdftotext_path = shutil.which("pdftotext")
+    if pdftotext_path is None:
+        return None
+
+    try:
+        with tempfile.TemporaryDirectory(prefix="rlm_pdf_extract_") as tmpdir:
+            input_path = Path(tmpdir) / "input.pdf"
+            output_path = Path(tmpdir) / "output.txt"
+            input_path.write_bytes(pdf_bytes)
+
+            proc = subprocess.run(  # noqa: S603
+                [pdftotext_path, "-layout", "-nopgbrk", str(input_path), str(output_path)],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            if proc.returncode != 0:
+                return None
+
+            if not output_path.exists():
+                return None
+
+            return output_path.read_text(encoding="utf-8", errors="replace")
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+
+
+def _extract_pdf_text_with_ocr(
+    pdf_bytes: bytes,
+    *,
+    max_pages: int = 10,
+) -> str | None:
+    """Attempt OCR extraction when PDFs contain image-only pages."""
+    pdftoppm_path = shutil.which("pdftoppm")
+    tesseract_path = shutil.which("tesseract")
+    if pdftoppm_path is None or tesseract_path is None:
+        return None
+
+    try:
+        with tempfile.TemporaryDirectory(prefix="rlm_pdf_ocr_") as tmpdir:
+            input_path = Path(tmpdir) / "input.pdf"
+            output_prefix = Path(tmpdir) / "page"
+            input_path.write_bytes(pdf_bytes)
+
+            convert_proc = subprocess.run(  # noqa: S603
+                [
+                    pdftoppm_path,
+                    "-png",
+                    "-r",
+                    "200",
+                    "-f",
+                    "1",
+                    "-l",
+                    str(max_pages),
+                    str(input_path),
+                    str(output_prefix),
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=90,
+            )
+            if convert_proc.returncode != 0:
+                return None
+
+            image_paths = sorted(Path(tmpdir).glob("page-*.png"))
+            if not image_paths:
+                return None
+
+            extracted_chunks: list[str] = []
+            for image_path in image_paths:
+                ocr_proc = subprocess.run(  # noqa: S603
+                    [tesseract_path, str(image_path), "stdout"],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    timeout=45,
+                )
+                if ocr_proc.returncode == 0 and ocr_proc.stdout:
+                    extracted_chunks.append(ocr_proc.stdout)
+
+            if not extracted_chunks:
+                return None
+            return "\n".join(extracted_chunks)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+
+
+def _extract_pdf_text(pdf_bytes: bytes, file_path: str) -> str:
+    """Extract text from PDF bytes using available extraction backends."""
+    for extractor in (_extract_pdf_text_with_pypdf, _extract_pdf_text_with_pdftotext):
+        extracted = extractor(pdf_bytes)
+        if extracted is not None and extracted.strip():
+            return extracted
+
+    ocr_extracted = _extract_pdf_text_with_ocr(pdf_bytes)
+    if ocr_extracted is not None and ocr_extracted.strip():
+        return ocr_extracted
+
+    return (
+        f"Error: Could not extract text from PDF '{file_path}'. "
+        "Install `pypdf` or `pdftotext` to enable extraction. "
+        "For scanned PDFs, install `pdftoppm` and `tesseract` for OCR fallback."
+    )
 
 
 class FileData(TypedDict):
@@ -227,6 +385,7 @@ Usage:
 - You have the capability to call multiple tools in a single response. It is always better to speculatively read multiple files as a batch that are potentially useful.
 - If you read a file that exists but has empty contents you will receive a system reminder warning in place of file contents.
 - Image files (`.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`) are returned as multimodal image content blocks (see https://docs.langchain.com/oss/python/langchain/messages#multimodal).
+- PDF files (`.pdf`) are text-extracted when possible (via available PDF extractors), then returned with line numbers so you can paginate with `offset`/`limit`.
 
 For image tasks:
 - Use `read_file(file_path=...)` for `.png/.jpg/.jpeg/.gif/.webp`
@@ -729,6 +888,31 @@ class FilesystemMiddleware(AgentMiddleware):
                     return f"Error reading image: {responses[0].error}"
                 return "Error reading image: unknown error"
 
+            if ext in PDF_EXTENSIONS:
+                responses = resolved_backend.download_files([validated_path])
+                if responses and responses[0].content is not None:
+                    extracted_text = _extract_pdf_text(responses[0].content, validated_path)
+                    if extracted_text.startswith("Error:"):
+                        return extracted_text
+
+                    result = _format_text_read_output(
+                        text=extracted_text,
+                        file_path=validated_path,
+                        offset=offset,
+                        limit=limit,
+                    )
+                    if token_limit and len(result) >= NUM_CHARS_PER_TOKEN * token_limit:
+                        truncation_msg = READ_FILE_TRUNCATION_MSG.format(file_path=validated_path)
+                        max_content_length = NUM_CHARS_PER_TOKEN * token_limit - len(truncation_msg)
+                        result = result[:max_content_length]
+                        result += truncation_msg
+                    if result and not result.startswith("Error:"):
+                        self._remember_read(validated_path, result)
+                    return result
+                if responses and responses[0].error:
+                    return f"Error reading PDF: {responses[0].error}"
+                return "Error reading PDF: unknown error"
+
             result = resolved_backend.read(validated_path, offset=offset, limit=limit)
 
             lines = result.splitlines(keepends=True)
@@ -786,6 +970,35 @@ class FilesystemMiddleware(AgentMiddleware):
                 if responses and responses[0].error:
                     return f"Error reading image: {responses[0].error}"
                 return "Error reading image: unknown error"
+
+            if ext in PDF_EXTENSIONS:
+                responses = await resolved_backend.adownload_files([validated_path])
+                if responses and responses[0].content is not None:
+                    extracted_text = await asyncio.to_thread(
+                        _extract_pdf_text,
+                        responses[0].content,
+                        validated_path,
+                    )
+                    if extracted_text.startswith("Error:"):
+                        return extracted_text
+
+                    result = _format_text_read_output(
+                        text=extracted_text,
+                        file_path=validated_path,
+                        offset=offset,
+                        limit=limit,
+                    )
+                    if token_limit and len(result) >= NUM_CHARS_PER_TOKEN * token_limit:
+                        truncation_msg = READ_FILE_TRUNCATION_MSG.format(file_path=validated_path)
+                        max_content_length = NUM_CHARS_PER_TOKEN * token_limit - len(truncation_msg)
+                        result = result[:max_content_length]
+                        result += truncation_msg
+                    if result and not result.startswith("Error:"):
+                        self._remember_read(validated_path, result)
+                    return result
+                if responses and responses[0].error:
+                    return f"Error reading PDF: {responses[0].error}"
+                return "Error reading PDF: unknown error"
 
             result = await resolved_backend.aread(validated_path, offset=offset, limit=limit)
 

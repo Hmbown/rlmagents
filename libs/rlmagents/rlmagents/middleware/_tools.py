@@ -6,6 +6,7 @@ RLMSessionManager.
 
 from __future__ import annotations
 
+import asyncio
 import difflib
 import json
 from datetime import datetime
@@ -683,7 +684,9 @@ def _create_exec_python_tool(manager: RLMSessionManager) -> BaseTool:
         code: Annotated[str, "Python code to execute in the sandboxed REPL"],
         context_id: Annotated[str, "Session identifier"] = "default",
     ) -> str:
-        return sync_exec_python(code, context_id)
+        # Execute in a worker thread so REPL helpers like sub_query() can
+        # safely bridge async model calls back to the main event loop.
+        return await asyncio.to_thread(sync_exec_python, code, context_id)
 
     return StructuredTool.from_function(
         name="exec_python",

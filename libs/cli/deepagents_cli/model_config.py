@@ -145,11 +145,17 @@ class ProviderConfig(TypedDict, total=False):
     """
 
 
-DEFAULT_CONFIG_DIR = Path.home() / ".deepagents"
-"""Directory for user-level Deep Agents configuration (`~/.deepagents`)."""
+DEFAULT_CONFIG_DIR = Path.home() / ".rlmagents"
+"""Directory for user-level RLMAgents configuration (`~/.rlmagents`)."""
+
+LEGACY_CONFIG_DIR = Path.home() / ".deepagents"
+"""Legacy directory for deepagents compatibility (`.deepagents` under home)."""
 
 DEFAULT_CONFIG_PATH = DEFAULT_CONFIG_DIR / "config.toml"
-"""Path to the user's model configuration file (`~/.deepagents/config.toml`)."""
+"""Path to the user's model configuration file (`~/.rlmagents/config.toml`)."""
+
+LEGACY_CONFIG_PATH = LEGACY_CONFIG_DIR / "config.toml"
+"""Legacy model config path used for read fallback (deepagents home config)."""
 
 PROVIDER_API_KEY_ENV: dict[str, str] = {
     "anthropic": "ANTHROPIC_API_KEY",
@@ -183,6 +189,23 @@ langchain registry fallback.
 _available_models_cache: dict[str, list[str]] | None = None
 _builtin_providers_cache: dict[str, Any] | None = None
 _default_config_cache: ModelConfig | None = None
+
+
+def _resolve_read_config_path(config_path: Path | None) -> Path:
+    """Resolve model config path for read operations.
+
+    Args:
+        config_path: Explicit config path override.
+
+    Returns:
+        Explicit path when provided. Otherwise the primary rlmagents path,
+        falling back to legacy deepagents path if primary does not exist.
+    """
+    if config_path is not None:
+        return config_path
+    if DEFAULT_CONFIG_PATH.exists() or not LEGACY_CONFIG_PATH.exists():
+        return DEFAULT_CONFIG_PATH
+    return LEGACY_CONFIG_PATH
 
 
 def clear_caches() -> None:
@@ -473,7 +496,10 @@ class ModelConfig:
         lifetime of the process. Use `clear_caches()` to reset.
 
         Args:
-            config_path: Path to config file. Defaults to ~/.deepagents/config.toml.
+            config_path: Path to config file.
+
+                Defaults to `~/.rlmagents/config.toml`, with read fallback to
+                the legacy deepagents home config when primary is absent.
 
         Returns:
             Parsed `ModelConfig` instance.
@@ -485,8 +511,7 @@ class ModelConfig:
         if is_default and _default_config_cache is not None:
             return _default_config_cache
 
-        if config_path is None:
-            config_path = DEFAULT_CONFIG_PATH
+        config_path = _resolve_read_config_path(config_path)
 
         if not config_path.exists():
             fallback = cls()
@@ -698,7 +723,7 @@ def _save_model_field(
     Args:
         field: Key name under the `[models]` table (e.g., `'default'` or `'recent'`).
         model_spec: The model to save in `provider:model` format.
-        config_path: Path to config file. Defaults to `~/.deepagents/config.toml`.
+        config_path: Path to config file. Defaults to `~/.rlmagents/config.toml`.
 
     Returns:
         True if save succeeded, False if it failed due to I/O errors.
@@ -749,7 +774,7 @@ def save_default_model(model_spec: str, config_path: Path | None = None) -> bool
 
     Args:
         model_spec: The model to set as default in `provider:model` format.
-        config_path: Path to config file. Defaults to `~/.deepagents/config.toml`.
+        config_path: Path to config file. Defaults to `~/.rlmagents/config.toml`.
 
     Returns:
         True if save succeeded, False if it failed due to I/O errors.
@@ -767,7 +792,7 @@ def clear_default_model(config_path: Path | None = None) -> bool:
     `[models].recent` or environment auto-detection.
 
     Args:
-        config_path: Path to config file. Defaults to `~/.deepagents/config.toml`.
+        config_path: Path to config file. Defaults to `~/.rlmagents/config.toml`.
 
     Returns:
         True if the key was removed (or was already absent), False on I/O error.
@@ -814,7 +839,7 @@ def save_recent_model(model_spec: str, config_path: Path | None = None) -> bool:
 
     Args:
         model_spec: The model to save in `provider:model` format.
-        config_path: Path to config file. Defaults to `~/.deepagents/config.toml`.
+        config_path: Path to config file. Defaults to `~/.rlmagents/config.toml`.
 
     Returns:
         True if save succeeded, False if it failed due to I/O errors.

@@ -5,13 +5,13 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING, Any
 
-from deepagents.backends.protocol import (
-    ExecuteResponse,
-    FileDownloadResponse,
-    FileUploadResponse,
+from rlmagents._harness.backends.protocol import (
+    ExecuteResponse,  # noqa: PLC2701
+    FileDownloadResponse,  # noqa: PLC2701
+    FileUploadResponse,  # noqa: PLC2701
     SandboxBackendProtocol,
 )
-from deepagents.backends.sandbox import BaseSandbox
+from rlmagents._harness.backends.sandbox import BaseSandbox  # noqa: PLC2701
 
 from deepagents_cli.integrations.sandbox_provider import (
     SandboxProvider,
@@ -142,11 +142,11 @@ class ModalProvider(SandboxProvider):
     Manages Modal sandbox lifecycle using the Modal SDK.
     """
 
-    def __init__(self, app_name: str = "deepagents-sandbox") -> None:
+    def __init__(self, app_name: str = "rlmagents-sandbox") -> None:
         """Initialize Modal provider.
 
         Args:
-            app_name: Name for the Modal app (default: "deepagents-sandbox")
+            app_name: Name for the Modal app (default: "rlmagents-sandbox")
         """
         import modal
 

@@ -1,4 +1,4 @@
-"""Status bar widget for deepagents-cli."""
+"""Status bar widget for rlmagents-cli."""
 
 from __future__ import annotations
 
@@ -92,6 +92,17 @@ class StatusBar(Horizontal):
         padding: 0 1;
         color: $text-muted;
     }
+
+    StatusBar .status-harness {
+        width: auto;
+        padding: 0 1;
+    }
+
+    StatusBar .status-harness.rlm {
+        background: #0ea5e9;
+        color: black;
+        text-style: bold;
+    }
     """
 
     mode: reactive[str] = reactive("normal", init=False)
@@ -100,16 +111,24 @@ class StatusBar(Horizontal):
     cwd: reactive[str] = reactive("", init=False)
     tokens: reactive[int] = reactive(0, init=False)
 
-    def __init__(self, cwd: str | Path | None = None, **kwargs: Any) -> None:
+    def __init__(
+        self,
+        cwd: str | Path | None = None,
+        *,
+        harness: str = "rlmagents",
+        **kwargs: Any,
+    ) -> None:
         """Initialize the status bar.
 
         Args:
             cwd: Current working directory to display
+            harness: Agent harness runtime.
             **kwargs: Additional arguments passed to parent
         """
         super().__init__(**kwargs)
         # Store initial cwd - will be used in compose()
         self._initial_cwd = str(cwd) if cwd else str(Path.cwd())
+        self._harness = harness
 
     def compose(self) -> ComposeResult:
         """Compose the status bar layout.
@@ -123,6 +142,8 @@ class StatusBar(Horizontal):
             classes="status-auto-approve off",
             id="auto-approve-indicator",
         )
+        if self._harness == "rlmagents":
+            yield Static("RLM", classes="status-harness rlm", id="harness-indicator")
         yield Static("", classes="status-message", id="status-message")
         yield Static("", classes="status-tokens", id="tokens-display")
         model_display = self._format_model_display()

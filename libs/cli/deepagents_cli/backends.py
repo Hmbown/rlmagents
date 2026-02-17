@@ -17,20 +17,24 @@ import logging
 import subprocess  # noqa: S404
 from typing import Annotated, cast
 
-from deepagents.backends.composite import CompositeBackend
-from deepagents.backends.local_shell import LocalShellBackend
-from deepagents.backends.protocol import (
-    BackendProtocol,
-    ExecuteResponse,
-    SandboxBackendProtocol,
-)
-from deepagents.middleware.filesystem import (
-    EXECUTE_TOOL_DESCRIPTION,
-    FilesystemMiddleware,
-    FilesystemState,
-)
 from langchain.tools import ToolRuntime  # noqa: TC002
 from langchain_core.tools import BaseTool, StructuredTool
+from rlmagents._harness.backends.composite import (
+    CompositeBackend,  # noqa: PLC2701
+)
+from rlmagents._harness.backends.local_shell import (
+    LocalShellBackend,  # noqa: PLC2701
+)
+from rlmagents._harness.backends.protocol import (
+    BackendProtocol,
+    ExecuteResponse,  # noqa: PLC2701
+    SandboxBackendProtocol,  # noqa: PLC2701
+)
+from rlmagents._harness.filesystem import (
+    EXECUTE_TOOL_DESCRIPTION,  # noqa: PLC2701
+    FilesystemMiddleware,  # noqa: PLC2701
+    FilesystemState,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -307,21 +311,21 @@ class CLIFilesystemMiddleware(FilesystemMiddleware):
 def patch_filesystem_middleware() -> None:
     """Monkey-patch the SDK to use `CLIFilesystemMiddleware`.
 
-    Must be called before `create_deep_agent` is invoked so the SDK's internal
+    Must be called before `create_rlm_agent` is invoked so the SDK's internal
     `FilesystemMiddleware(backend=...)` calls construct our subclass instead.
 
     Patches two module-level references:
 
-    - `deepagents.middleware.filesystem.FilesystemMiddleware`
-    - `deepagents.graph.FilesystemMiddleware`
+    - `rlmagents._harness.filesystem.FilesystemMiddleware`
+    - `rlmagents.graph.FilesystemMiddleware`
 
-    Both must be patched because `graph.py` imports the class at the top level
+    Both must be patched because `graph.py` imports the class at module scope
     and uses it directly when constructing middleware stacks. If the SDK adds
     additional import sites, this patch must be updated accordingly. Validate
     when upgrading the SDK version.
     """
-    import deepagents.graph as graph_module
-    import deepagents.middleware.filesystem as fs_module
+    import rlmagents._harness.filesystem as fs_module  # noqa: PLC2701
+    import rlmagents.graph as graph_module
 
     fs_module.FilesystemMiddleware = CLIFilesystemMiddleware  # type: ignore[misc]
     graph_module.FilesystemMiddleware = CLIFilesystemMiddleware  # type: ignore[misc]

@@ -1,7 +1,9 @@
-"""Chat input widget for deepagents-cli with autocomplete and history support."""
+"""Chat input widget for rlmagents-cli with autocomplete and history support."""
 
 from __future__ import annotations
 
+import contextlib
+import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 
@@ -434,7 +436,7 @@ class ChatInput(Vertical):
 
         Args:
             cwd: Current working directory for file completion
-            history_file: Path to history file (default: ~/.deepagents/history.jsonl)
+            history_file: Path to history file (default: `~/.rlmagents/history.jsonl`)
             **kwargs: Additional arguments for parent
         """
         super().__init__(**kwargs)
@@ -449,7 +451,13 @@ class ChatInput(Vertical):
 
         # Set up history manager
         if history_file is None:
-            history_file = Path.home() / ".deepagents" / "history.jsonl"
+            primary_history_file = Path.home() / ".rlmagents" / "history.jsonl"
+            legacy_history_file = Path.home() / ".deepagents" / "history.jsonl"
+            if not primary_history_file.exists() and legacy_history_file.exists():
+                primary_history_file.parent.mkdir(parents=True, exist_ok=True)
+                with contextlib.suppress(OSError):
+                    shutil.copy2(legacy_history_file, primary_history_file)
+            history_file = primary_history_file
         self._history = HistoryManager(history_file)
 
     def compose(self) -> ComposeResult:

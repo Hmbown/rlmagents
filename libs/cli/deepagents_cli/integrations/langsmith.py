@@ -7,13 +7,13 @@ import os
 import time
 from typing import TYPE_CHECKING, Any
 
-from deepagents.backends.protocol import (
-    ExecuteResponse,
-    FileDownloadResponse,
-    FileUploadResponse,
+from rlmagents._harness.backends.protocol import (
+    ExecuteResponse,  # noqa: PLC2701
+    FileDownloadResponse,  # noqa: PLC2701
+    FileUploadResponse,  # noqa: PLC2701
     SandboxBackendProtocol,
 )
-from deepagents.backends.sandbox import BaseSandbox
+from rlmagents._harness.backends.sandbox import BaseSandbox  # noqa: PLC2701
 
 from deepagents_cli.integrations.sandbox_provider import SandboxProvider
 
@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 
 
 # Default template configuration
-DEFAULT_TEMPLATE_NAME = "deepagents-cli"
+DEFAULT_TEMPLATE_NAME = "rlmagents-cli"
 DEFAULT_TEMPLATE_IMAGE = "python:3"
 
 

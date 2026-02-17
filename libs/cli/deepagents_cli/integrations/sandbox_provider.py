@@ -1,4 +1,4 @@
-"""Sandbox provider interface used by the deepagents CLI."""
+"""Sandbox provider interface used by the rlmagents CLI."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from deepagents.backends.protocol import SandboxBackendProtocol
+    from rlmagents._harness.backends.protocol import SandboxBackendProtocol
 
 
 class SandboxError(Exception):

@@ -185,6 +185,21 @@ class TestBuildNonInteractiveHeader:
                 header = _build_non_interactive_header("agent", "deadbeef")
         assert "Thread: deadbeef" in header.plain
 
+    def test_includes_rlm_harness_indicator(self) -> None:
+        """Header should show explicit RLM marker for the rlmagents harness."""
+        with patch("deepagents_cli.non_interactive.settings") as mock_settings:
+            mock_settings.model_name = None
+            with patch(
+                "deepagents_cli.non_interactive.build_langsmith_thread_url",
+                return_value=None,
+            ):
+                header = _build_non_interactive_header(
+                    "agent",
+                    "deadbeef",
+                    harness="rlmagents",
+                )
+        assert "Harness: rlmagents [RLM]" in header.plain
+
     def test_thread_clickable_when_url_available(self) -> None:
         """Thread ID should be a hyperlink when LangSmith URL is available."""
         url = "https://smith.langchain.com/o/org/projects/p/proj/t/abc123"

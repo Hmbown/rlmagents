@@ -501,7 +501,7 @@ class TestGetLangsmithProjectName:
             "LANGSMITH_PROJECT": "env-project",
         }
         with (
-            patch.dict("os.environ", env, clear=False),
+            patch.dict("os.environ", env, clear=True),
             patch("deepagents_cli.config.settings") as mock_settings,
         ):
             mock_settings.deepagents_langchain_project = "settings-project"
@@ -515,7 +515,7 @@ class TestGetLangsmithProjectName:
             "LANGSMITH_PROJECT": "env-project",
         }
         with (
-            patch.dict("os.environ", env, clear=False),
+            patch.dict("os.environ", env, clear=True),
             patch("deepagents_cli.config.settings") as mock_settings,
         ):
             mock_settings.deepagents_langchain_project = None
@@ -528,7 +528,7 @@ class TestGetLangsmithProjectName:
             "LANGSMITH_TRACING": "true",
         }
         with (
-            patch.dict("os.environ", env, clear=False),
+            patch.dict("os.environ", env, clear=True),
             patch("deepagents_cli.config.settings") as mock_settings,
         ):
             mock_settings.deepagents_langchain_project = None
@@ -542,7 +542,7 @@ class TestGetLangsmithProjectName:
             "LANGSMITH_TRACING": "true",
         }
         with (
-            patch.dict("os.environ", env, clear=False),
+            patch.dict("os.environ", env, clear=True),
             patch("deepagents_cli.config.settings") as mock_settings,
         ):
             mock_settings.deepagents_langchain_project = None
@@ -661,7 +661,7 @@ class TestBuildLangsmithThreadUrl:
 
         assert (
             result
-            == "https://smith.langchain.com/o/org/projects/p/proj/t/thread-123?utm_source=deepagents-cli"
+            == "https://smith.langchain.com/o/org/projects/p/proj/t/thread-123?utm_source=rlmagents-cli"
         )
 
     def test_strips_trailing_slash(self) -> None:
@@ -682,7 +682,7 @@ class TestBuildLangsmithThreadUrl:
 
         assert (
             result
-            == "https://smith.langchain.com/o/org/projects/p/proj/t/thread-123?utm_source=deepagents-cli"
+            == "https://smith.langchain.com/o/org/projects/p/proj/t/thread-123?utm_source=rlmagents-cli"
         )
 
     def test_returns_none_when_no_project_name(self) -> None:

@@ -2,7 +2,7 @@
 name: skill-creator
 description: "Guide for creating effective skills that extend agent capabilities with specialized knowledge, workflows, or tool integrations. Use this skill when the user asks to: (1) create a new skill, (2) make a skill, (3) build a skill, (4) set up a skill, (5) initialize a skill, (6) scaffold a skill, (7) update or modify an existing skill, (8) validate a skill, (9) learn about skill structure, (10) understand how skills work, or (11) get guidance on skill design patterns. Trigger on phrases like \"create a skill\", \"new skill\", \"make a skill\", \"skill for X\", \"how do I create a skill\", or \"help me build a skill\"."
 license: MIT
-compatibility: designed for deepagents-cli
+compatibility: designed for rlmagents-cli
 ---
 
 # Skill Creator
@@ -23,9 +23,9 @@ The deepagents CLI loads skills from five sources, listed here from lowest to hi
 | # | Directory | Scope | Notes |
 |---|-----------|-------|-------|
 | 0 | `<package>/built_in_skills/` | Built-in | Ships with deepagents CLI |
-| 1 | `~/.deepagents/<agent>/skills/` | User (deepagents alias) | Default for `deepagents skills create` |
+| 1 | `~/.rlmagents/<agent>/skills/` | User (deepagents alias) | Default for `rlmagents skills create` |
 | 2 | `~/.agents/skills/` | User | Shared across agent tools |
-| 3 | `.deepagents/skills/` | Project (deepagents alias) | Default for `deepagents skills create --project` |
+| 3 | `.rlmagents/skills/` | Project (deepagents alias) | Default for `rlmagents skills create --project` |
 | 4 | `.agents/skills/` | Project | Shared across agent tools |
 
 `<agent>` is the agent configuration name (default: `agent`). When two directories contain a skill with the same name, the higher-precedence version wins — project skills override user skills, and any user or project skill overrides built-in skills.
@@ -33,12 +33,12 @@ The deepagents CLI loads skills from five sources, listed here from lowest to hi
 Example directory layout:
 
 ```
-~/.deepagents/agent/skills/     # user skills (lowest precedence)
+~/.rlmagents/agent/skills/     # user skills (lowest precedence)
 ├── skill-name-1/
 │   └── SKILL.md
 └── ...
 
-<project-root>/.deepagents/skills/   # project skills (higher precedence)
+<project-root>/.rlmagents/skills/   # project skills (higher precedence)
 ├── skill-name-2/
 │   └── SKILL.md
 └── ...
@@ -304,10 +304,10 @@ For deepagents CLI, use any of the skill directories listed in "Skill Location f
 
 ```bash
 # User skills (default)
-scripts/init_skill.py <skill-name> --path ~/.deepagents/agent/skills
+scripts/init_skill.py <skill-name> --path ~/.rlmagents/agent/skills
 
 # Project skills
-scripts/init_skill.py <skill-name> --path .deepagents/skills
+scripts/init_skill.py <skill-name> --path .rlmagents/skills
 ```
 
 The script:
@@ -319,19 +319,19 @@ The script:
 
 After initialization, customize or remove the generated SKILL.md and example files as needed.
 
-#### Option B: `deepagents skills create` (quick start)
+#### Option B: `rlmagents skills create` (quick start)
 
 The built-in CLI command creates a minimal skill with just a `SKILL.md` template — no resource directories. Use this for simple skills that only need instructions and no bundled scripts, references, or assets.
 
 ```bash
 # Create in user skills directory
-deepagents skills create <skill-name>
+rlmagents skills create <skill-name>
 
 # Create in project skills directory
-deepagents skills create <skill-name> --project
+rlmagents skills create <skill-name> --project
 ```
 
-Use `init_skill.py` when the skill will include bundled resources (`scripts/`, `references/`, `assets/`). Use `deepagents skills create` for a quick, minimal starting point.
+Use `init_skill.py` when the skill will include bundled resources (`scripts/`, `references/`, `assets/`). Use `rlmagents skills create` for a quick, minimal starting point.
 
 ### Step 4: Edit the Skill
 

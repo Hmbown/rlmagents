@@ -70,7 +70,7 @@ agent = create_rlm_agent(
     memory=["/memory/AGENTS.md"],          # Memory files
     auto_load_threshold=5000,              # Auto-load >5KB into RLM
     sandbox_timeout=300.0,                 # RLM REPL timeout
-    enable_rlm_in_subagents=True,          # RLM tools in sub-agents
+    enable_rlm_in_subagents=True,          # Deprecated; RLM in sub-agents is always on
     interrupt_on={"edit_file": True},      # Human-in-the-loop
 )
 ```

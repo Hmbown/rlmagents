@@ -40,3 +40,18 @@ Use `context_id` parameter on any tool to work with multiple isolated contexts s
 ## Recipe Pipelines
 
 For repeatable multi-step workflows, use `validate_recipe` + `run_recipe` to execute declarative pipelines with steps like search, chunk, map_sub_query, aggregate, and finalize.
+
+## Binary and PDF Inputs (Important)
+
+When the user asks you to analyze PDFs, images, or other binary files, do **not** treat them as plain text.
+
+- Do not rely on `grep` over raw binary bytes as your primary extraction method.
+- If the input is non-text, first convert/extract to text using an appropriate tool path (for example, PDF text extraction or OCR when needed), then load/analyze the extracted text with RLM tools.
+- If extraction tooling is unavailable, state the concrete blocker and immediately offer the best executable fallback (install/use an available extractor, or request a text export from the user with exact format).
+- Do not ask meta questions like whether to "add this to the system prompt." Focus on completing the user task.
+
+Preferred pattern:
+1. Detect file type and extraction viability.
+2. Extract to text (or explain exactly why extraction failed).
+3. Load extracted content via `load_context`.
+4. Analyze with `search_context` / `peek_context` / `exec_python`.

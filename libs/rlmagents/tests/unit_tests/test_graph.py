@@ -208,3 +208,162 @@ def test_create_agent_keeps_explicit_response_format(monkeypatch):
     )
 
     assert captured["response_format"] is explicit_format
+
+
+def test_create_agent_always_includes_rlm_middleware(monkeypatch):
+    captured = {}
+
+    def fake_create_agent(
+        model,
+        *,
+        system_prompt=None,
+        tools=None,
+        middleware=(),
+        response_format=None,
+        context_schema=None,
+        backend=None,
+        debug=False,
+        name=None,
+        cache=None,
+        **_kwargs,
+    ):
+        captured["middleware"] = list(middleware)
+        return Mock()
+
+    monkeypatch.setattr(graph, "create_agent", fake_create_agent)
+    monkeypatch.setattr(graph, "_get_langchain_version", lambda: "1.2.10")
+    _configure_graph_for_test(monkeypatch)
+
+    graph.create_rlm_agent(model=Mock())
+
+    assert any(
+        isinstance(layer, graph.RLMMiddleware) for layer in captured["middleware"]
+    )
+
+
+def test_create_agent_ignores_disable_flag_and_keeps_subagent_rlm(monkeypatch):
+    captured = {}
+
+    def fake_create_agent(
+        model,
+        *,
+        system_prompt=None,
+        tools=None,
+        middleware=(),
+        response_format=None,
+        context_schema=None,
+        backend=None,
+        debug=False,
+        name=None,
+        cache=None,
+        **_kwargs,
+    ):
+        captured["middleware"] = list(middleware)
+        return Mock()
+
+    monkeypatch.setattr(graph, "create_agent", fake_create_agent)
+    monkeypatch.setattr(graph, "_get_langchain_version", lambda: "1.2.10")
+    _configure_graph_for_test(monkeypatch)
+
+    subagents = [
+        {
+            "name": "code-reviewer",
+            "description": "Review code for regressions.",
+            "system_prompt": "Focus on defects and risks.",
+            "tools": [],
+        }
+    ]
+
+    with pytest.warns(DeprecationWarning, match="deprecated and ignored"):
+        graph.create_rlm_agent(
+            model=Mock(),
+            subagents=subagents,
+            enable_rlm_in_subagents=False,
+        )
+
+    subagent_middleware = next(
+        layer
+        for layer in captured["middleware"]
+        if isinstance(layer, graph.SubAgentMiddleware)
+    )
+
+    configured_subagents = [
+        spec for spec in subagent_middleware._subagents if "runnable" not in spec
+    ]
+    assert configured_subagents
+    for spec in configured_subagents:
+        middleware_stack = spec.get("middleware", [])
+        assert any(
+            isinstance(layer, graph.RLMMiddleware) for layer in middleware_stack
+        )
+
+
+def test_create_agent_propagates_sub_query_model_to_subagent_rlm(monkeypatch):
+    captured = {}
+    sub_query_model = Mock()
+    build_calls = []
+    original_builder = graph._build_rlm_middleware
+
+    def fake_create_agent(
+        model,
+        *,
+        system_prompt=None,
+        tools=None,
+        middleware=(),
+        response_format=None,
+        context_schema=None,
+        backend=None,
+        debug=False,
+        name=None,
+        cache=None,
+        **_kwargs,
+    ):
+        captured["middleware"] = list(middleware)
+        return Mock()
+
+    def recording_builder(**kwargs):
+        build_calls.append(kwargs)
+        return original_builder(**kwargs)
+
+    monkeypatch.setattr(graph, "_build_rlm_middleware", recording_builder)
+    monkeypatch.setattr(graph, "create_agent", fake_create_agent)
+    monkeypatch.setattr(graph, "_get_langchain_version", lambda: "1.2.10")
+    _configure_graph_for_test(monkeypatch)
+
+    subagents = [
+        {
+            "name": "analyst",
+            "description": "Analyze context-heavy tasks.",
+            "system_prompt": "Use tools carefully.",
+            "tools": [],
+        }
+    ]
+
+    graph.create_rlm_agent(
+        model=Mock(),
+        subagents=subagents,
+        sub_query_model=sub_query_model,
+    )
+
+    subagent_middleware = next(
+        layer
+        for layer in captured["middleware"]
+        if isinstance(layer, graph.SubAgentMiddleware)
+    )
+    configured_subagents = [
+        spec for spec in subagent_middleware._subagents if "runnable" not in spec
+    ]
+    rlm_layers = []
+    for spec in configured_subagents:
+        rlm_layers.extend(
+            [
+                layer
+                for layer in spec.get("middleware", [])
+                if isinstance(layer, graph.RLMMiddleware)
+            ]
+        )
+
+    assert rlm_layers
+    assert build_calls
+    for call in build_calls:
+        assert call["sub_query_model"] is sub_query_model

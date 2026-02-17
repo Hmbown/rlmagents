@@ -152,8 +152,11 @@ class LocalContextMiddleware(AgentMiddleware):
         files = []
         try:
             for item in sorted(cwd.iterdir()):
-                # Skip hidden files (except .deepagents)
-                if item.name.startswith(".") and item.name != ".deepagents":
+                # Skip hidden files (except agent config directories)
+                if item.name.startswith(".") and item.name not in {
+                    ".rlmagents",
+                    ".deepagents",
+                }:
                     continue
 
                 # Skip ignored patterns
@@ -196,8 +199,11 @@ class LocalContextMiddleware(AgentMiddleware):
             Returns:
                 True if item should be included, False otherwise.
             """
-            # Skip hidden files (except .deepagents)
-            if item.name.startswith(".") and item.name != ".deepagents":
+            # Skip hidden files (except agent config directories)
+            if item.name.startswith(".") and item.name not in {
+                ".rlmagents",
+                ".deepagents",
+            }:
                 return False
             # Skip ignored patterns
             return item.name not in IGNORE_PATTERNS

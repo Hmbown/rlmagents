@@ -1,4 +1,4 @@
-"""Main entry point and CLI loop for deepagents."""
+"""Main entry point and CLI loop for rlmagents."""
 
 # ruff: noqa: E402
 # Imports placed after warning filters to suppress deprecation warnings
@@ -91,13 +91,13 @@ def check_cli_dependencies() -> None:
 
     if missing:
         print("\n❌ Missing required CLI dependencies!")
-        print("\nThe following packages are required to use the deepagents CLI:")
+        print("\nThe following packages are required to use the rlmagents CLI:")
         for pkg in missing:
             print(f"  - {pkg}")
         print("\nPlease install them with:")
-        print("  pip install deepagents[cli]")
+        print("  pip install rlmagents-cli")
         print("\nOr install all dependencies:")
-        print("  pip install 'deepagents[cli]'")
+        print("  pip install 'rlmagents-cli[all-providers]'")
         sys.exit(1)
 
 
@@ -109,8 +109,8 @@ def _resolve_harness(
 
     Precedence order:
     1. CLI flag (`--harness`)
-    2. Agent-level persisted setting (`~/.deepagents/<agent>/settings.toml`)
-    3. Default (`deepagents`)
+    2. Agent-level persisted setting (`~/.rlmagents/<agent>/settings.toml`)
+    3. Default (`rlmagents`)
 
     Returns:
         Resolved harness value.
@@ -120,9 +120,9 @@ def _resolve_harness(
         return cli_harness
 
     persisted_harness = settings.get_agent_harness(assistant_id)
-    if persisted_harness == "rlmagents":
-        return "rlmagents"
-    return "deepagents"
+    if persisted_harness in {"rlmagents", "deepagents"}:
+        return persisted_harness
+    return "rlmagents"
 
 
 def parse_args() -> argparse.Namespace:
@@ -135,7 +135,7 @@ def parse_args() -> argparse.Namespace:
     # Factory that builds an argparse Action whose __call__ invokes the
     # supplied *help_fn* instead of argparse's default help text.  Each
     # subcommand can pass its own Rich-formatted help screen so that
-    # `deepagents <subcommand> -h` shows context-specific help.
+    # `rlmagents <subcommand> -h` shows context-specific help.
     def _make_help_action(
         help_fn: Callable[[], None],
     ) -> type[argparse.Action]:
@@ -187,7 +187,7 @@ def parse_args() -> argparse.Namespace:
     )
 
     parser = argparse.ArgumentParser(
-        description=("Deep Agents - AI Coding Assistant"),
+        description=("RLMAgents - AI Coding Assistant"),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         add_help=False,
     )
@@ -275,10 +275,13 @@ def parse_args() -> argparse.Namespace:
 
     parser.add_argument(
         "--harness",
-        choices=["deepagents", "rlmagents"],
+        choices=["rlmagents", "deepagents"],
         default=None,
         metavar="TYPE",
-        help="Harness to use (default: persisted per-agent setting, else deepagents).",
+        help=(
+            "Harness to use (default: persisted per-agent setting, else rlmagents). "
+            "'deepagents' is accepted only as a compatibility alias."
+        ),
     )
 
     parser.add_argument(
@@ -391,7 +394,7 @@ def parse_args() -> argparse.Namespace:
         "-v",
         "--version",
         action="version",
-        version=f"deepagents-cli {__version__}",
+        version=f"rlmagents-cli {__version__}",
     )
     parser.add_argument(
         "-h",
@@ -405,7 +408,7 @@ def parse_args() -> argparse.Namespace:
 async def run_textual_cli_async(
     assistant_id: str,
     *,
-    harness: HarnessType = "deepagents",
+    harness: HarnessType = "rlmagents",
     auto_approve: bool = False,
     sandbox_type: str = "none",  # str (not None) to match argparse choices
     sandbox_id: str | None = None,
@@ -420,7 +423,7 @@ async def run_textual_cli_async(
 
     Args:
         assistant_id: Agent identifier for memory storage
-        harness: Agent harness runtime (`deepagents` or `rlmagents`)
+        harness: Agent harness runtime (`rlmagents` or compatibility alias `deepagents`)
         auto_approve: Whether to auto-approve tool usage
         sandbox_type: Type of sandbox
             ("none", "modal", "runloop", "daytona", "langsmith")
@@ -539,7 +542,7 @@ def apply_stdin_pipe(args: argparse.Namespace) -> None:
         piped text to it (the CLI still runs non-interactively):
 
         ```bash
-        cat context.txt | deepagents -n "summarize this"
+        cat context.txt | rlmagents -n "summarize this"
         # non_interactive_message = "{contents of context.txt}\n\nsummarize this"
         ```
 
@@ -547,7 +550,7 @@ def apply_stdin_pipe(args: argparse.Namespace) -> None:
         the piped text to it (the CLI still runs interactively):
 
         ```bash
-        cat error.log | deepagents -m "explain this"
+        cat error.log | rlmagents -m "explain this"
         # initial_prompt = "{contents of error.log}\n\nexplain this"
         ```
 
@@ -555,7 +558,7 @@ def apply_stdin_pipe(args: argparse.Namespace) -> None:
         the CLI to run non-interactively with it as the prompt:
 
         ```bash
-        echo "fix the typo in README.md" | deepagents
+        echo "fix the typo in README.md" | rlmagents
         # non_interactive_message = "fix the typo in README.md"
         ```
 
@@ -710,7 +713,7 @@ def cli_main() -> None:
             else:
                 console.print(
                     "[bold red]Error:[/bold red] Could not clear default model. "
-                    "Check permissions for ~/.deepagents/"
+                    "Check permissions for ~/.rlmagents/"
                 )
                 sys.exit(1)
             sys.exit(0)
@@ -745,7 +748,7 @@ def cli_main() -> None:
             else:
                 console.print(
                     "[bold red]Error:[/bold red] Could not save default model. "
-                    "Check permissions for ~/.deepagents/"
+                    "Check permissions for ~/.rlmagents/"
                 )
                 sys.exit(1)
             sys.exit(0)
@@ -842,17 +845,17 @@ def cli_main() -> None:
                         console.print()
                         console.print("[yellow]Did you mean?[/yellow]")
                         for tid in similar:
-                            hint = Text("  deepagents -r ", style="cyan")
+                            hint = Text("  rlmagents -r ", style="cyan")
                             hint.append(str(tid), style="cyan")
                             console.print(hint)
                         console.print()
 
                     console.print(
-                        "[dim]Use 'deepagents threads list' to see "
+                        "[dim]Use 'rlmagents threads list' to see "
                         "available threads.[/dim]"
                     )
                     console.print(
-                        "[dim]Use 'deepagents -r' to resume the most "
+                        "[dim]Use 'rlmagents -r' to resume the most "
                         "recent thread.[/dim]"
                     )
                     sys.exit(1)
@@ -913,7 +916,7 @@ def cli_main() -> None:
             if thread_id and not is_resumed and return_code == 0:
                 console.print()
                 console.print("[dim]Resume this thread with:[/dim]")
-                hint = Text("deepagents -r ", style="cyan")
+                hint = Text("rlmagents -r ", style="cyan")
                 hint.append(str(thread_id), style="cyan")
                 console.print(hint)
     except KeyboardInterrupt:

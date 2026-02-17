@@ -7,21 +7,20 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
-from deepagents import create_deep_agent
-from deepagents.backends import CompositeBackend
-from deepagents.backends.filesystem import FilesystemBackend
-from deepagents.backends.sandbox import SandboxBackendProtocol
-from deepagents.middleware import MemoryMiddleware, SkillsMiddleware
+from rlmagents import create_rlm_agent
+from rlmagents._harness.backends import CompositeBackend  # noqa: PLC2701
+from rlmagents._harness.backends.filesystem import FilesystemBackend  # noqa: PLC2701
+from rlmagents._harness.backends.protocol import SandboxBackendProtocol
+from rlmagents._harness.memory import MemoryMiddleware  # noqa: PLC2701
+from rlmagents._harness.skills import SkillsMiddleware  # noqa: PLC2701
 
 from deepagents_cli.backends import CLIShellBackend, patch_filesystem_middleware
 
-try:
-    from rlmagents import create_rlm_agent
-except ImportError:
-    create_rlm_agent = None
-
 if TYPE_CHECKING:
-    from deepagents.middleware.subagents import CompiledSubAgent, SubAgent
+    from rlmagents._harness.subagents import (
+        CompiledSubAgent,
+        SubAgent,
+    )
 from langchain.agents.middleware import (
     InterruptOnConfig,
 )
@@ -49,17 +48,21 @@ from deepagents_cli.subagents import list_subagents
 DEFAULT_AGENT_NAME = "agent"
 """The default agent name used when no `-a` flag is provided."""
 
-HarnessType = Literal["deepagents", "rlmagents"]
+HarnessType = Literal["rlmagents", "deepagents"]
+
+# Backward-compatibility alias for tests and integration hooks that still patch
+# `create_deep_agent`. In rlmagents-cli, both harness names resolve to the
+# rlmagents implementation.
+create_deep_agent = create_rlm_agent
 
 
 def list_agents() -> None:
     """List all available agents."""
-    agents_dir = settings.user_deepagents_dir
-
-    if not agents_dir.exists() or not any(agents_dir.iterdir()):
+    agent_dirs = settings.list_agent_dirs()
+    if not agent_dirs:
         console.print("[yellow]No agents found.[/yellow]")
         console.print(
-            "[dim]Agents will be created in ~/.deepagents/ "
+            "[dim]Agents will be created in ~/.rlmagents/ "
             "when you first use them.[/dim]",
             style=COLORS["dim"],
         )
@@ -67,38 +70,36 @@ def list_agents() -> None:
 
     console.print("\n[bold]Available Agents:[/bold]\n", style=COLORS["primary"])
 
-    for agent_path in sorted(agents_dir.iterdir()):
-        if agent_path.is_dir():
-            agent_name = agent_path.name
-            agent_md = agent_path / "AGENTS.md"
-            is_default = agent_name == DEFAULT_AGENT_NAME
-            default_label = " [dim](default)[/dim]" if is_default else ""
+    for agent_name in sorted(agent_dirs):
+        agent_path = agent_dirs[agent_name]
+        agent_md = agent_path / "AGENTS.md"
+        is_default = agent_name == DEFAULT_AGENT_NAME
+        default_label = " [dim](default)[/dim]" if is_default else ""
 
-            bullet = get_glyphs().bullet
-            if agent_md.exists():
-                console.print(
-                    f"  {bullet} [bold]{agent_name}[/bold]{default_label}",
-                    style=COLORS["primary"],
-                )
-                console.print(f"    {agent_path}", style=COLORS["dim"])
-            else:
-                console.print(
-                    f"  {bullet} [bold]{agent_name}[/bold]{default_label}"
-                    " [dim](incomplete)[/dim]",
-                    style=COLORS["tool"],
-                )
-                console.print(f"    {agent_path}", style=COLORS["dim"])
+        bullet = get_glyphs().bullet
+        if agent_md.exists():
+            console.print(
+                f"  {bullet} [bold]{agent_name}[/bold]{default_label}",
+                style=COLORS["primary"],
+            )
+            console.print(f"    {agent_path}", style=COLORS["dim"])
+        else:
+            console.print(
+                f"  {bullet} [bold]{agent_name}[/bold]{default_label}"
+                " [dim](incomplete)[/dim]",
+                style=COLORS["tool"],
+            )
+            console.print(f"    {agent_path}", style=COLORS["dim"])
 
     console.print()
 
 
 def reset_agent(agent_name: str, source_agent: str | None = None) -> None:
     """Reset an agent to default or copy from another agent."""
-    agents_dir = settings.user_deepagents_dir
-    agent_dir = agents_dir / agent_name
+    agent_dir = settings.get_agent_dir(agent_name)
 
     if source_agent:
-        source_dir = agents_dir / source_agent
+        source_dir = settings.get_agent_dir(source_agent)
         source_md = source_dir / "AGENTS.md"
 
         if not source_md.exists():
@@ -159,7 +160,7 @@ def get_system_prompt(assistant_id: str, sandbox_type: str | None = None) -> str
     """
     template = (Path(__file__).parent / "system_prompt.md").read_text()
 
-    skills_path = f"~/.deepagents/{assistant_id}/skills/"
+    skills_path = f"~/.rlmagents/{assistant_id}/skills/"
 
     # Build model identity section
     model_identity_section = ""
@@ -381,7 +382,7 @@ def create_cli_agent(
     model: str | BaseChatModel,
     assistant_id: str,
     *,
-    harness: HarnessType = "deepagents",
+    harness: HarnessType = "rlmagents",
     tools: Sequence[BaseTool | Callable | dict[str, Any]] | None = None,
     sandbox: SandboxBackendProtocol | None = None,
     sandbox_type: str | None = None,
@@ -394,7 +395,7 @@ def create_cli_agent(
 ) -> tuple[Pregel, CompositeBackend]:
     """Create a CLI-configured agent with flexible options.
 
-    This is the main entry point for creating a deepagents CLI agent, usable
+    This is the main entry point for creating an rlmagents CLI agent, usable
     both internally and from external code (e.g., benchmarking frameworks).
 
     Args:
@@ -402,8 +403,8 @@ def create_cli_agent(
         assistant_id: Agent identifier for memory/state storage
         harness: Agent harness runtime to use.
 
-            - `'deepagents'`: Use the deepagents harness (default)
-            - `'rlmagents'`: Use the rlmagents recursive harness
+            - `'rlmagents'`: Use the rlmagents recursive harness (default)
+            - `'deepagents'`: Compatibility alias for `'rlmagents'`
         tools: Additional tools to provide to agent
         sandbox: Optional sandbox backend for remote execution
             (e.g., `ModalBackend`).
@@ -438,8 +439,6 @@ def create_cli_agent(
             - `composite_backend`: `CompositeBackend` for file operations
 
     Raises:
-        ImportError: If `harness="rlmagents"` is requested but rlmagents is not
-            installed.
         ValueError: If `harness` is not a supported value.
     """
     tools = tools or []
@@ -454,39 +453,68 @@ def create_cli_agent(
             agent_md.touch()
 
     # Skills directories (if enabled)
-    skills_dir = None
-    project_skills_dir = None
     if enable_skills:
-        skills_dir = settings.ensure_user_skills_dir(assistant_id)
-        project_skills_dir = settings.get_project_skills_dir()
+        settings.ensure_user_skills_dir(assistant_id)
 
     # Load custom subagents from filesystem
-    custom_subagents: list[SubAgent | CompiledSubAgent] = []
-    user_agents_dir = settings.get_user_agents_dir(assistant_id)
-    project_agents_dir = settings.get_project_agents_dir()
+    custom_subagents_map: dict[str, SubAgent | CompiledSubAgent] = {}
+    user_agent_dirs = settings.get_user_agents_dirs(assistant_id)
+    project_agent_dirs = settings.get_project_agents_dirs()
 
-    for subagent_meta in list_subagents(
-        user_agents_dir=user_agents_dir,
-        project_agents_dir=project_agents_dir,
-    ):
-        subagent: SubAgent = {
-            "name": subagent_meta["name"],
-            "description": subagent_meta["description"],
-            "system_prompt": subagent_meta["system_prompt"],
-        }
-        if subagent_meta["model"]:
-            subagent["model"] = subagent_meta["model"]
-        custom_subagents.append(subagent)
+    for user_dir in user_agent_dirs:
+        for subagent_meta in list_subagents(
+            user_agents_dir=user_dir,
+            project_agents_dir=None,
+        ):
+            subagent: SubAgent = {
+                "name": subagent_meta["name"],
+                "description": subagent_meta["description"],
+                "system_prompt": subagent_meta["system_prompt"],
+            }
+            if subagent_meta["model"]:
+                subagent["model"] = subagent_meta["model"]
+            custom_subagents_map[subagent_meta["name"]] = subagent
+
+    for project_dir in project_agent_dirs:
+        for subagent_meta in list_subagents(
+            user_agents_dir=None,
+            project_agents_dir=project_dir,
+        ):
+            subagent: SubAgent = {
+                "name": subagent_meta["name"],
+                "description": subagent_meta["description"],
+                "system_prompt": subagent_meta["system_prompt"],
+            }
+            if subagent_meta["model"]:
+                subagent["model"] = subagent_meta["model"]
+            custom_subagents_map[subagent_meta["name"]] = subagent
+
+    custom_subagents = list(custom_subagents_map.values())
 
     # Build middleware stack based on enabled features
     agent_middleware = []
 
+    def _dedupe_paths(paths: list[Path]) -> list[str]:
+        """Convert paths to unique strings while preserving order.
+
+        Returns:
+            Ordered unique path strings.
+        """
+        seen: set[str] = set()
+        ordered: list[str] = []
+        for path in paths:
+            path_str = str(path)
+            if path_str in seen:
+                continue
+            seen.add(path_str)
+            ordered.append(path_str)
+        return ordered
+
     # Add memory middleware
     if enable_memory:
-        memory_sources = [str(settings.get_user_agent_md_path(assistant_id))]
-        project_agent_md = settings.get_project_agent_md_path()
-        if project_agent_md:
-            memory_sources.append(str(project_agent_md))
+        memory_source_paths = settings.get_user_agent_md_paths(assistant_id)
+        memory_source_paths.extend(settings.get_project_agent_md_paths())
+        memory_sources = _dedupe_paths(memory_source_paths)
 
         agent_middleware.append(
             MemoryMiddleware(
@@ -498,10 +526,10 @@ def create_cli_agent(
     # Add skills middleware
     if enable_skills:
         # Built-in first (lowest precedence), then user, then project (highest)
-        sources = [str(settings.get_built_in_skills_dir())]
-        sources.append(str(skills_dir))
-        if project_skills_dir:
-            sources.append(str(project_skills_dir))
+        source_paths = [settings.get_built_in_skills_dir()]
+        source_paths.extend(settings.get_user_skills_dirs(assistant_id))
+        source_paths.extend(settings.get_project_skills_dirs())
+        sources = _dedupe_paths(source_paths)
 
         agent_middleware.append(
             SkillsMiddleware(
@@ -561,11 +589,11 @@ def create_cli_agent(
     if sandbox is None:
         # Local mode: Route large results to a unique temp directory
         large_results_backend = FilesystemBackend(
-            root_dir=tempfile.mkdtemp(prefix="deepagents_large_results_"),
+            root_dir=tempfile.mkdtemp(prefix="rlmagents_large_results_"),
             virtual_mode=True,
         )
         conversation_history_backend = FilesystemBackend(
-            root_dir=tempfile.mkdtemp(prefix="deepagents_conversation_history_"),
+            root_dir=tempfile.mkdtemp(prefix="rlmagents_conversation_history_"),
             virtual_mode=True,
         )
         composite_backend = CompositeBackend(
@@ -584,15 +612,29 @@ def create_cli_agent(
 
     # Create the agent
     # Use provided checkpointer or fallback to InMemorySaver
-    if harness == "deepagents" and sandbox is None and enable_shell:
+    resolved_harness: HarnessType = harness
+    if (
+        resolved_harness in {"rlmagents", "deepagents"}
+        and sandbox is None
+        and enable_shell
+    ):
         # Patch FilesystemMiddleware so the SDK constructs our subclass with
         # per-command timeout support on the execute tool. Only needed in local
         # shell mode -- remote sandbox backends do not accept the timeout kwarg.
         patch_filesystem_middleware()
     final_checkpointer = checkpointer if checkpointer is not None else InMemorySaver()
 
-    if harness == "deepagents":
-        agent = create_deep_agent(
+    if resolved_harness in {"rlmagents", "deepagents"}:
+        # Enable RLM recursive sub_query()/llm_query() by default in CLI mode.
+        # If the provided model is an instantiated BaseChatModel, reuse it for
+        # sub-queries so the full RLM toolchain is available.
+        sub_query_model = model if isinstance(model, BaseChatModel) else None
+        factory = (
+            create_rlm_agent
+            if resolved_harness == "rlmagents"
+            else create_deep_agent
+        )
+        agent = factory(
             model=model,
             system_prompt=system_prompt,
             tools=tools,
@@ -601,23 +643,7 @@ def create_cli_agent(
             interrupt_on=interrupt_on,
             checkpointer=final_checkpointer,
             subagents=custom_subagents or None,
-        ).with_config(config)
-    elif harness == "rlmagents":
-        if create_rlm_agent is None:
-            msg = (
-                "rlmagents harness is not available. Install rlmagents to use "
-                "--harness rlmagents."
-            )
-            raise ImportError(msg)
-        agent = create_rlm_agent(
-            model=model,
-            system_prompt=system_prompt,
-            tools=tools,
-            backend=composite_backend,
-            middleware=agent_middleware,
-            interrupt_on=interrupt_on,
-            checkpointer=final_checkpointer,
-            subagents=custom_subagents or None,
+            sub_query_model=sub_query_model,
         ).with_config(config)
     else:
         msg = f"Unsupported harness: {harness!r}"

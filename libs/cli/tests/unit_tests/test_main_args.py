@@ -101,12 +101,12 @@ class TestHarnessArgument:
             mock_settings.save_agent_harness.assert_not_called()
             mock_settings.get_agent_harness.assert_called_once_with("agent")
 
-    def test_resolve_harness_falls_back_to_deepagents(self) -> None:
-        """Default harness should be deepagents when no setting exists."""
+    def test_resolve_harness_falls_back_to_rlmagents(self) -> None:
+        """Default harness should be rlmagents when no setting exists."""
         with patch("deepagents_cli.main.settings") as mock_settings:
             mock_settings.get_agent_harness.return_value = None
             result = _resolve_harness("agent", None)
-            assert result == "deepagents"
+            assert result == "rlmagents"
 
 
 @pytest.mark.parametrize(

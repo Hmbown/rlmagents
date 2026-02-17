@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Awaitable, Callable, Sequence
 
 from langchain.agents.middleware.types import (
@@ -111,11 +112,20 @@ class RLMMiddleware(AgentMiddleware):
             return self._custom_prompt
         return load_rlm_prompt()
 
+    def _sync_manager_loop(self) -> None:
+        """Keep the manager's async bridge loop aligned with runtime."""
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        self._manager.set_loop(loop)
+
     def wrap_model_call(
         self,
         request: ModelRequest,
         handler: Callable[[ModelRequest], ModelResponse],
     ) -> ModelResponse:
+        self._sync_manager_loop()
         prompt = self._get_prompt()
         if prompt:
             new_system_message = _append_to_system_message(request.system_message, prompt)
@@ -127,6 +137,7 @@ class RLMMiddleware(AgentMiddleware):
         request: ModelRequest,
         handler: Callable[[ModelRequest], Awaitable[ModelResponse]],
     ) -> ModelResponse:
+        self._sync_manager_loop()
         prompt = self._get_prompt()
         if prompt:
             new_system_message = _append_to_system_message(request.system_message, prompt)
@@ -167,6 +178,7 @@ class RLMMiddleware(AgentMiddleware):
         request: ToolCallRequest,
         handler: Callable[[ToolCallRequest], ToolMessage | Command],
     ) -> ToolMessage | Command:
+        self._sync_manager_loop()
         tool_result = handler(request)
         return self._maybe_auto_load(tool_result, request.tool_call.get("name", ""))
 
@@ -175,5 +187,6 @@ class RLMMiddleware(AgentMiddleware):
         request: ToolCallRequest,
         handler: Callable[[ToolCallRequest], Awaitable[ToolMessage | Command]],
     ) -> ToolMessage | Command:
+        self._sync_manager_loop()
         tool_result = await handler(request)
         return self._maybe_auto_load(tool_result, request.tool_call.get("name", ""))

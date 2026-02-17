@@ -1,6 +1,7 @@
 """Thread management using LangGraph's built-in checkpoint persistence."""
 
 import logging
+import shutil
 import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -84,12 +85,27 @@ def format_timestamp(iso_timestamp: str | None) -> str:
 def get_db_path() -> Path:
     """Get path to global database.
 
+    Migrates legacy `.deepagents/sessions.db` to `.rlmagents/sessions.db`
+    on first access when the primary DB does not yet exist.
+
     Returns:
         Path to the SQLite database file.
     """
-    db_dir = Path.home() / ".deepagents"
+    db_dir = Path.home() / ".rlmagents"
     db_dir.mkdir(parents=True, exist_ok=True)
-    return db_dir / "sessions.db"
+    primary_path = db_dir / "sessions.db"
+    legacy_path = Path.home() / ".deepagents" / "sessions.db"
+    if not primary_path.exists() and legacy_path.exists():
+        try:
+            shutil.copy2(legacy_path, primary_path)
+        except OSError:
+            logger.warning(
+                "Failed to migrate sessions DB from %s to %s",
+                legacy_path,
+                primary_path,
+                exc_info=True,
+            )
+    return primary_path
 
 
 def generate_thread_id() -> str:
@@ -356,7 +372,7 @@ async def list_threads_command(
     agent_name: str | None = None,
     limit: int = 20,
 ) -> None:
-    """CLI handler for `deepagents threads list`.
+    """CLI handler for `rlmagents threads list`.
 
     Fetches and displays a table of recent conversation threads, optionally
     filtered by agent name.
@@ -376,7 +392,7 @@ async def list_threads_command(
             )
         else:
             console.print("[yellow]No threads found.[/yellow]")
-        console.print("[dim]Start a conversation with: deepagents[/dim]")
+        console.print("[dim]Start a conversation with: rlmagents[/dim]")
         return
 
     title = (
@@ -407,7 +423,7 @@ async def list_threads_command(
 
 
 async def delete_thread_command(thread_id: str) -> None:
-    """CLI handler for: deepagents threads delete."""
+    """CLI handler for: rlmagents threads delete."""
     deleted = await delete_thread(thread_id)
 
     if deleted:

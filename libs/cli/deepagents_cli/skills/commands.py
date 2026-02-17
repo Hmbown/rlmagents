@@ -1,9 +1,9 @@
 """CLI commands for skill management.
 
 These commands are registered with the CLI via main.py:
-- deepagents skills list --agent <agent> [--project]
-- deepagents skills create <name>
-- deepagents skills info <name>
+- rlmagents skills list --agent <agent> [--project]
+- rlmagents skills create <name>
+- rlmagents skills info <name>
 """
 
 import argparse
@@ -12,7 +12,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from deepagents.middleware.skills import SkillMetadata
+from rlmagents._harness.skills import SkillMetadata
 
 from deepagents_cli.config import COLORS, Settings, console, get_glyphs
 from deepagents_cli.skills.load import list_skills
@@ -193,7 +193,7 @@ def _list(agent: str, *, project: bool = False) -> None:
             )
             console.print(
                 "\n[dim]Create a project skill:\n"
-                "  deepagents skills create my-skill --project[/dim]",
+                "  rlmagents skills create my-skill --project[/dim]",
                 style=COLORS["dim"],
             )
             return
@@ -223,15 +223,15 @@ def _list(agent: str, *, project: bool = False) -> None:
                 "[dim]Skills are loaded from these directories "
                 "(highest precedence first):\n"
                 "  1. .agents/skills/                 project skills\n"
-                "  2. .deepagents/skills/             project skills (alias)\n"
+                "  2. .rlmagents/skills/             project skills (alias)\n"
                 "  3. ~/.agents/skills/               user skills\n"
-                "  4. ~/.deepagents/<agent>/skills/   user skills (alias)\n"
+                "  4. ~/.rlmagents/<agent>/skills/   user skills (alias)\n"
                 "  5. <package>/built_in_skills/      built-in skills[/dim]",
                 style=COLORS["dim"],
             )
             console.print(
                 "\n[dim]Create your first skill:\n"
-                "  deepagents skills create my-skill[/dim]",
+                "  rlmagents skills create my-skill[/dim]",
                 style=COLORS["dim"],
             )
             return
@@ -318,7 +318,7 @@ description: "{description}"
 # (Warning: SKILL.md files exceeding 10 MB are silently skipped at load time.)
 # Optional fields per Agent Skills spec:
 # license: Apache-2.0
-# compatibility: Designed for Deep Agents CLI
+# compatibility: Designed for RLMAgents CLI
 # metadata:
 #   author: your-org
 #   version: "1.0"
@@ -438,12 +438,12 @@ def _create(skill_name: str, agent: str, project: bool = False) -> None:
         "\n"
         f"  nano {skill_md}\n"
         "\n"
-        "  See examples/skills/ in the deepagents-cli repo for example skills:\n"
+        "  See examples/skills/ in the rlmagents-cli repo for example skills:\n"
         "   - web-research: Structured research workflow\n"
         "   - langgraph-docs: LangGraph documentation lookup\n"
         "\n"
         "   Copy an example:\n"
-        "   cp -r examples/skills/web-research ~/.deepagents/agent/skills/\n",
+        "   cp -r examples/skills/web-research ~/.rlmagents/agent/skills/\n",
         style=COLORS["dim"],
     )
 
@@ -566,7 +566,7 @@ def setup_skills_parser(
     """Setup the skills subcommand parser with all its subcommands.
 
     Each subcommand gets a dedicated help screen so that
-    `deepagents skills -h` shows skills-specific help, not the
+    `rlmagents skills -h` shows skills-specific help, not the
     global help.
 
     Args:
@@ -622,9 +622,9 @@ def setup_skills_parser(
         description=(
             "Create a new skill with a template SKILL.md file. "
             "By default, skills are created in "
-            "~/.deepagents/<agent>/skills/. "
+            "~/.rlmagents/<agent>/skills/. "
             "Use --project to create in the project's "
-            ".deepagents/skills/ directory."
+            ".rlmagents/skills/ directory."
         ),
         add_help=False,
         parents=help_parent(show_skills_create_help),

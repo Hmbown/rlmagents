@@ -1,4 +1,4 @@
-"""Textual UI application for deepagents-cli."""
+"""Textual UI application for rlmagents-cli."""
 
 from __future__ import annotations
 
@@ -70,11 +70,11 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from deepagents.backends import CompositeBackend
-    from deepagents.backends.sandbox import SandboxBackendProtocol
     from langchain_core.runnables import RunnableConfig
     from langgraph.checkpoint.base import BaseCheckpointSaver
     from langgraph.pregel import Pregel
+    from rlmagents._harness.backends import CompositeBackend
+    from rlmagents._harness.backends.protocol import SandboxBackendProtocol
     from textual.app import ComposeResult
     from textual.events import Click, MouseUp, Resize
     from textual.scrollbar import ScrollUp
@@ -226,9 +226,9 @@ class TextualSessionState:
 
 
 _COMMAND_URLS: dict[str, str] = {
-    "/changelog": "https://github.com/langchain-ai/deepagents/blob/main/libs/cli/CHANGELOG.md",
+    "/changelog": "https://github.com/Hmbown/rlmagents/blob/main/libs/cli/CHANGELOG.md",
     "/docs": DOCS_URL,
-    "/feedback": "https://github.com/langchain-ai/deepagents/issues/new/choose",
+    "/feedback": "https://github.com/Hmbown/rlmagents/issues/new/choose",
 }
 
 # Prompt for /remember command - triggers agent to review conversation and update
@@ -262,8 +262,8 @@ Use memory when the knowledge is:
 - Something to always keep in mind
 - A simple rule or pattern
 
-**Global** (`~/.deepagents/agent/AGENTS.md`): Universal preferences across all projects
-**Project** (`.deepagents/AGENTS.md`): Project-specific conventions and decisions
+**Global** (`~/.rlmagents/agent/AGENTS.md`): Universal preferences across all projects
+**Project** (`.rlmagents/AGENTS.md`): Project-specific conventions and decisions
 
 ### → Skill for reusable workflows and methodologies
 **Create a skill when** we developed:
@@ -281,7 +281,7 @@ If we established best practices around a workflow or process, capture them in a
 **Example:** If we discussed best practices for code review, create a `code-review` skill that encodes those practices into a reusable workflow.
 
 ### Skill Location
-`~/.deepagents/agent/skills/<skill-name>/SKILL.md`
+`~/.rlmagents/agent/skills/<skill-name>/SKILL.md`
 
 ### Skill Structure
 ```
@@ -348,9 +348,9 @@ List what you captured and where you stored it:
 
 
 class DeepAgentsApp(App):
-    """Main Textual application for deepagents-cli."""
+    """Main Textual application for rlmagents-cli."""
 
-    TITLE = "Deep Agents"
+    TITLE = "RLMAgents"
     CSS_PATH = "app.tcss"
     ENABLE_COMMAND_PALETTE = False
 
@@ -395,7 +395,7 @@ class DeepAgentsApp(App):
         *,
         agent: Pregel | None = None,
         assistant_id: str | None = None,
-        harness: HarnessType = "deepagents",
+        harness: HarnessType = "rlmagents",
         backend: CompositeBackend | None = None,
         auto_approve: bool = False,
         cwd: str | Path | None = None,
@@ -407,12 +407,13 @@ class DeepAgentsApp(App):
         sandbox_type: str | None = None,
         **kwargs: Any,
     ) -> None:
-        """Initialize the Deep Agents application.
+        """Initialize the RLMAgents application.
 
         Args:
             agent: Pre-configured LangGraph agent (optional for standalone mode)
             assistant_id: Agent identifier for memory storage
-            harness: Agent harness runtime (`deepagents` or `rlmagents`)
+            harness: Agent harness runtime (`rlmagents` or compatibility alias
+                `deepagents`)
             backend: Backend for file operations
             auto_approve: Whether to start with auto-approve enabled
             cwd: Current working directory to display
@@ -466,14 +467,18 @@ class DeepAgentsApp(App):
         # Main chat area with scrollable messages
         # VerticalScroll tracks user scroll intent for better auto-scroll behavior
         with VerticalScroll(id="chat"):
-            yield WelcomeBanner(thread_id=self._lc_thread_id, id="welcome-banner")
+            yield WelcomeBanner(
+                thread_id=self._lc_thread_id,
+                harness=self._harness,
+                id="welcome-banner",
+            )
             yield Container(id="messages")
             with Container(id="bottom-app-container"):
                 yield ChatInput(cwd=self._cwd, id="input-area")
             yield Static(id="chat-spacer")  # Fills remaining space below input
 
         # Status bar at bottom
-        yield StatusBar(cwd=self._cwd, id="status-bar")
+        yield StatusBar(cwd=self._cwd, harness=self._harness, id="status-bar")
 
     async def on_mount(self) -> None:
         """Initialize components after mount."""
@@ -1112,10 +1117,10 @@ class DeepAgentsApp(App):
                 from deepagents_cli._version import __version__
 
                 await self._mount_message(
-                    AppMessage(f"deepagents version: {__version__}")
+                    AppMessage(f"rlmagents version: {__version__}")
                 )
             except Exception:
-                await self._mount_message(AppMessage("deepagents version: unknown"))
+                await self._mount_message(AppMessage("rlmagents version: unknown"))
         elif cmd == "/clear":
             self._pending_messages.clear()
             self._queued_widgets.clear()
@@ -1888,7 +1893,7 @@ class DeepAgentsApp(App):
             else:
                 detail = (
                     f"provider '{provider}' is not recognized. "
-                    "Add it to ~/.deepagents/config.toml with an api_key_env field"
+                    "Add it to ~/.rlmagents/config.toml with an api_key_env field"
                 )
             await self._mount_message(ErrorMessage(f"Missing credentials: {detail}"))
             return
@@ -1916,7 +1921,7 @@ class DeepAgentsApp(App):
                 await self._mount_message(
                     ErrorMessage(
                         "Could not save model preference. "
-                        "Check permissions for ~/.deepagents/"
+                        "Check permissions for ~/.rlmagents/"
                     )
                 )
             return
@@ -1978,7 +1983,7 @@ class DeepAgentsApp(App):
             await self._mount_message(
                 AppMessage(
                     f"Switched to {display} (preference not saved - "
-                    "check ~/.deepagents/ permissions)"
+                    "check ~/.rlmagents/ permissions)"
                 )
             )
 
@@ -1998,7 +2003,7 @@ class DeepAgentsApp(App):
     async def _set_default_model(self, model_spec: str) -> None:
         """Set the default model in config without switching the current session.
 
-        Updates `[models].default` in `~/.deepagents/config.toml` so that
+        Updates `[models].default` in `~/.rlmagents/config.toml` so that
         future CLI launches use this model. Does not affect the running session.
 
         Args:
@@ -2017,7 +2022,7 @@ class DeepAgentsApp(App):
         else:
             await self._mount_message(
                 ErrorMessage(
-                    "Could not save default model. Check permissions for ~/.deepagents/"
+                    "Could not save default model. Check permissions for ~/.rlmagents/"
                 )
             )
 
@@ -2038,7 +2043,7 @@ class DeepAgentsApp(App):
             await self._mount_message(
                 ErrorMessage(
                     "Could not clear default model. "
-                    "Check permissions for ~/.deepagents/"
+                    "Check permissions for ~/.rlmagents/"
                 )
             )
 
@@ -2047,7 +2052,7 @@ async def run_textual_app(
     *,
     agent: Pregel | None = None,
     assistant_id: str | None = None,
-    harness: HarnessType = "deepagents",
+    harness: HarnessType = "rlmagents",
     backend: CompositeBackend | None = None,
     auto_approve: bool = False,
     cwd: str | Path | None = None,
@@ -2063,7 +2068,7 @@ async def run_textual_app(
     Args:
         agent: Pre-configured LangGraph agent (optional)
         assistant_id: Agent identifier for memory storage
-        harness: Agent harness runtime (`deepagents` or `rlmagents`)
+        harness: Agent harness runtime (`rlmagents` or compatibility alias `deepagents`)
         backend: Backend for file operations
         auto_approve: Whether to start with auto-approve enabled
         cwd: Current working directory to display

@@ -7,8 +7,6 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
-from deepagents.backends import CompositeBackend
-from deepagents.backends.filesystem import FilesystemBackend
 from langchain_core.callbacks import CallbackManagerForLLMRun
 from langchain_core.language_models import LanguageModelInput
 from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
@@ -17,6 +15,8 @@ from langchain_core.outputs import ChatResult
 from langchain_core.runnables import Runnable
 from langchain_core.tools import BaseTool, tool
 from pydantic import Field
+from rlmagents._harness.backends import CompositeBackend
+from rlmagents._harness.backends.filesystem import FilesystemBackend
 
 from deepagents_cli.agent import create_cli_agent
 

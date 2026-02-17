@@ -1,4 +1,4 @@
-"""Welcome banner widget for deepagents-cli."""
+"""Welcome banner widget for rlmagents-cli."""
 
 from __future__ import annotations
 
@@ -30,15 +30,23 @@ class WelcomeBanner(Static):
     }
     """
 
-    def __init__(self, thread_id: str | None = None, **kwargs: Any) -> None:
+    def __init__(
+        self,
+        thread_id: str | None = None,
+        *,
+        harness: str = "rlmagents",
+        **kwargs: Any,
+    ) -> None:
         """Initialize the welcome banner.
 
         Args:
             thread_id: Optional thread ID to display in the banner.
+            harness: Agent harness runtime.
             **kwargs: Additional arguments passed to parent.
         """
         # Avoid collision with Widget._thread_id (Textual internal int)
         self._cli_thread_id: str | None = thread_id
+        self._harness = harness
         self._project_name: str | None = get_langsmith_project_name()
         self._project_url: str | None = None
 
@@ -101,7 +109,7 @@ class WelcomeBanner(Static):
                     f"'{self._project_name}'",
                     style=Style(
                         color="cyan",
-                        link=f"{project_url}?utm_source=deepagents-cli",
+                        link=f"{project_url}?utm_source=rlmagents-cli",
                     ),
                 )
             else:
@@ -112,7 +120,7 @@ class WelcomeBanner(Static):
             if project_url:
                 thread_url = (
                     f"{project_url.rstrip('/')}/t/{self._cli_thread_id}"
-                    "?utm_source=deepagents-cli"
+                    "?utm_source=rlmagents-cli"
                 )
                 thread_line = Text.assemble(
                     ("Thread: ", "dim"),
@@ -122,6 +130,13 @@ class WelcomeBanner(Static):
                 banner.append_text(thread_line)
             else:
                 banner.append(f"Thread: {self._cli_thread_id}\n", style="dim")
+
+        if self._harness == "rlmagents":
+            banner.append(
+                f"{get_glyphs().checkmark} RLM harness active: recursive context "
+                "+ evidence tools\n",
+                style="bold cyan",
+            )
 
         banner.append(
             "Ready to code! What would you like to build?\n", style=COLORS["primary"]

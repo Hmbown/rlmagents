@@ -46,6 +46,14 @@ _FORMAT_CACHE_MAX = 64
 _FORMAT_CACHE: OrderedDict[tuple[int, int, str], ContentFormat] = OrderedDict()
 
 
+def _running_loop_or_none() -> asyncio.AbstractEventLoop | None:
+    """Return the active asyncio loop for this thread, if one exists."""
+    try:
+        return asyncio.get_running_loop()
+    except RuntimeError:
+        return None
+
+
 def _classify_sub_query_error(exc: Exception) -> str:
     """Classify sub_query model/provider errors for actionable retries."""
     msg = str(exc).lower()
@@ -127,6 +135,7 @@ class RLMSessionManager:
         self._sub_query_max_tokens = sub_query_max_tokens
         self._context_token_threshold = context_token_threshold
         self._context_iteration_threshold = context_iteration_threshold
+        self._loop = _running_loop_or_none()
         self.sessions: dict[str, Session] = {}
 
     # -- Sub-query model configuration ---------------------------------------
@@ -137,6 +146,12 @@ class RLMSessionManager:
         # Re-inject into all existing sessions
         for cid, session in self.sessions.items():
             self._inject_sub_query(session, cid)
+
+    def set_loop(self, loop: asyncio.AbstractEventLoop | None) -> None:
+        """Set/replace the event loop used by REPL sub_query bridges."""
+        self._loop = loop
+        for session in self.sessions.values():
+            session.repl.set_loop(loop)
 
     # -- Session lifecycle ---------------------------------------------------
 
@@ -469,6 +484,10 @@ class RLMSessionManager:
         enabling programmatic recursion (e.g. looping over chunks and
         querying the LLM for each).
         """
+        if self._loop is None:
+            self._loop = _running_loop_or_none()
+        session.repl.set_loop(self._loop)
+
         model = self._sub_query_model
         timeout = self._sub_query_timeout
 

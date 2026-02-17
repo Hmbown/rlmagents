@@ -3,8 +3,8 @@
 import os
 from pathlib import Path
 
-from rlmagents.session_manager import RLMSessionManager
 from rlmagents.middleware._tools import _build_rlm_tools
+from rlmagents.session_manager import RLMSessionManager
 
 
 def run_tooled_dogfood() -> None:

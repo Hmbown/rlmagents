@@ -2,11 +2,11 @@
 
 This module provides filesystem-based skill loading for CLI operations
 (list, create, info). It wraps the prebuilt middleware functionality from
-deepagents.middleware.skills and adapts it for direct filesystem access
+`rlmagents._harness.skills` and adapts it for direct filesystem access
 needed by CLI commands.
 
 For middleware usage within agents, use
-deepagents.middleware.skills.SkillsMiddleware directly.
+`rlmagents._harness.skills.SkillsMiddleware` directly.
 """
 
 from __future__ import annotations
@@ -14,11 +14,11 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, cast
 
-from deepagents.backends.filesystem import FilesystemBackend
+from rlmagents._harness.backends.filesystem import FilesystemBackend
 
 if TYPE_CHECKING:
     from pathlib import Path
-from deepagents.middleware.skills import (
+from rlmagents._harness.skills import (
     SkillMetadata,
     _list_skills as list_skills_from_backend,
 )
@@ -57,17 +57,17 @@ def list_skills(
 
     Precedence order (lowest to highest):
     0. `built_in_skills_dir` (`<package>/built_in_skills/`)
-    1. `user_skills_dir` (`~/.deepagents/{agent}/skills/`)
+    1. `user_skills_dir` (`~/.rlmagents/{agent}/skills/`)
     2. `user_agent_skills_dir` (`~/.agents/skills/`)
-    3. `project_skills_dir` (`.deepagents/skills/`)
+    3. `project_skills_dir` (`.rlmagents/skills/`)
     4. `project_agent_skills_dir` (`.agents/skills/`)
 
     Skills from higher-precedence directories override those with the same name.
 
     Args:
         built_in_skills_dir: Path to built-in skills shipped with the package.
-        user_skills_dir: Path to `~/.deepagents/{agent}/skills/`.
-        project_skills_dir: Path to `.deepagents/skills/`.
+        user_skills_dir: Path to `~/.rlmagents/{agent}/skills/`.
+        project_skills_dir: Path to `.rlmagents/skills/`.
         user_agent_skills_dir: Path to `~/.agents/skills/` (alias).
         project_agent_skills_dir: Path to `.agents/skills/` (alias).
 
@@ -94,7 +94,7 @@ def list_skills(
                 # so consumers can see which version shipped the skill.
                 enriched_metadata = {
                     **skill["metadata"],
-                    "deepagents-cli-version": _cli_version,
+                    "rlmagents-cli-version": _cli_version,
                 }
                 # cast(): type checkers can't infer TypedDict from spread syntax
                 extended_skill = cast(
@@ -109,7 +109,7 @@ def list_skills(
                 exc_info=True,
             )
 
-    # 1. User deepagents skills (~/.deepagents/{agent}/skills/)
+    # 1. User rlmagents skills (~/.rlmagents/{agent}/skills/)
     if user_skills_dir and user_skills_dir.exists():
         try:
             user_backend = FilesystemBackend(root_dir=str(user_skills_dir))
@@ -129,7 +129,7 @@ def list_skills(
                 exc_info=True,
             )
 
-    # 2. User agent skills (~/.agents/skills/) - overrides user deepagents
+    # 2. User agent skills (~/.agents/skills/) - overrides user rlmagents
     if user_agent_skills_dir and user_agent_skills_dir.exists():
         try:
             user_agent_backend = FilesystemBackend(root_dir=str(user_agent_skills_dir))
@@ -149,7 +149,7 @@ def list_skills(
                 exc_info=True,
             )
 
-    # 3. Project deepagents skills (.deepagents/skills/)
+    # 3. Project rlmagents skills (.rlmagents/skills/)
     if project_skills_dir and project_skills_dir.exists():
         try:
             project_backend = FilesystemBackend(root_dir=str(project_skills_dir))

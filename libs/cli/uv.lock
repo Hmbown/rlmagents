@@ -325,15 +325,6 @@ wheels = [
 ]
 
 [[package]]
-name = "bracex"
-version = "2.6"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/63/9a/fec38644694abfaaeca2798b58e276a8e61de49e2e37494ace423395febc/bracex-2.6.tar.gz", hash = "sha256:98f1347cd77e22ee8d967a30ad4e310b233f7754dbf31ff3fceb76145ba47dc7", size = 26642, upload-time = "2025-06-22T19:12:31.254Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/9d/2a/9186535ce58db529927f6cf5990a849aa9e052eea3e2cfefe20b9e1802da/bracex-2.6-py3-none-any.whl", hash = "sha256:0b0049264e7340b3ec782b5cb99beb325f36c3782a32e36e876452fd49a09952", size = 11508, upload-time = "2025-06-22T19:12:29.781Z" },
-]
-
-[[package]]
 name = "build"
 version = "1.4.0"
 source = { registry = "https://pypi.org/simple" }
@@ -851,218 +842,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/28/94/cf8f19f70f79e9b1f4cccd0a4d54d423876f8c9be41fa8a8481c629c8a0c/daytona_toolbox_api_client_async-0.141.0.tar.gz", hash = "sha256:c7059d3867317cbb4f7ad8568968b2025cd7779abc039516d446bedf16ea97da", size = 61768, upload-time = "2026-02-11T14:38:40.577Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/78/d1/a39bf504ca01eed05e31c09d6720f1fe6b77db5c85a8ec50cfb679503b75/daytona_toolbox_api_client_async-0.141.0-py3-none-any.whl", hash = "sha256:4e55731b807f554818c7c46c462a22778d124f31c4a19431f50745386ef81bec", size = 175732, upload-time = "2026-02-11T14:38:38.81Z" },
-]
-
-[[package]]
-name = "deepagents"
-version = "0.4.2"
-source = { editable = "../deepagents" }
-dependencies = [
-    { name = "langchain" },
-    { name = "langchain-anthropic" },
-    { name = "langchain-core" },
-    { name = "langchain-google-genai" },
-    { name = "wcmatch" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "langchain", specifier = ">=1.2.10,<2.0.0" },
-    { name = "langchain-anthropic", specifier = ">=1.3.2,<2.0.0" },
-    { name = "langchain-core", specifier = ">=1.2.10,<2.0.0" },
-    { name = "langchain-google-genai", specifier = ">=4.2.0,<5.0.0" },
-    { name = "wcmatch" },
-]
-
-[package.metadata.requires-dev]
-test = [
-    { name = "build" },
-    { name = "langchain-openai" },
-    { name = "pytest" },
-    { name = "pytest-asyncio", specifier = ">=1.3.0" },
-    { name = "pytest-cov" },
-    { name = "pytest-socket" },
-    { name = "pytest-timeout", specifier = ">=2.3.1,<3.0.0" },
-    { name = "pytest-watcher", specifier = ">=0.3.4,<1.0.0" },
-    { name = "pytest-xdist" },
-    { name = "ruff", specifier = ">=0.12.2,<0.16.0" },
-    { name = "twine" },
-    { name = "ty", specifier = ">=0.0.1,<1.0.0" },
-]
-
-[[package]]
-name = "deepagents-cli"
-version = "0.0.21"
-source = { editable = "." }
-dependencies = [
-    { name = "aiosqlite" },
-    { name = "daytona" },
-    { name = "deepagents" },
-    { name = "langchain" },
-    { name = "langchain-openai" },
-    { name = "langgraph-checkpoint-sqlite" },
-    { name = "langsmith" },
-    { name = "markdownify" },
-    { name = "modal" },
-    { name = "pillow" },
-    { name = "prompt-toolkit" },
-    { name = "pyperclip" },
-    { name = "python-dotenv" },
-    { name = "pyyaml" },
-    { name = "requests" },
-    { name = "rich" },
-    { name = "rlmagents" },
-    { name = "runloop-api-client" },
-    { name = "tavily-python" },
-    { name = "textual" },
-    { name = "textual-autocomplete" },
-    { name = "tomli-w" },
-]
-
-[package.optional-dependencies]
-all-providers = [
-    { name = "langchain-anthropic" },
-    { name = "langchain-aws" },
-    { name = "langchain-cohere" },
-    { name = "langchain-deepseek" },
-    { name = "langchain-fireworks" },
-    { name = "langchain-google-genai" },
-    { name = "langchain-google-vertexai" },
-    { name = "langchain-groq" },
-    { name = "langchain-huggingface" },
-    { name = "langchain-ibm" },
-    { name = "langchain-mistralai" },
-    { name = "langchain-nvidia-ai-endpoints" },
-    { name = "langchain-ollama" },
-    { name = "langchain-openai" },
-    { name = "langchain-perplexity" },
-    { name = "langchain-xai" },
-]
-anthropic = [
-    { name = "langchain-anthropic" },
-]
-bedrock = [
-    { name = "langchain-aws" },
-]
-cohere = [
-    { name = "langchain-cohere" },
-]
-deepseek = [
-    { name = "langchain-deepseek" },
-]
-fireworks = [
-    { name = "langchain-fireworks" },
-]
-google-genai = [
-    { name = "langchain-google-genai" },
-]
-groq = [
-    { name = "langchain-groq" },
-]
-huggingface = [
-    { name = "langchain-huggingface" },
-]
-ibm = [
-    { name = "langchain-ibm" },
-]
-mistralai = [
-    { name = "langchain-mistralai" },
-]
-nvidia = [
-    { name = "langchain-nvidia-ai-endpoints" },
-]
-ollama = [
-    { name = "langchain-ollama" },
-]
-openai = [
-    { name = "langchain-openai" },
-]
-perplexity = [
-    { name = "langchain-perplexity" },
-]
-vertexai = [
-    { name = "langchain-google-vertexai" },
-]
-xai = [
-    { name = "langchain-xai" },
-]
-
-[package.dev-dependencies]
-test = [
-    { name = "build" },
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-    { name = "pytest-cov" },
-    { name = "pytest-mock" },
-    { name = "pytest-socket" },
-    { name = "pytest-timeout" },
-    { name = "pytest-watcher" },
-    { name = "pytest-xdist" },
-    { name = "responses" },
-    { name = "ruff" },
-    { name = "twine" },
-    { name = "ty" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "aiosqlite", specifier = ">=0.19.0,<1.0.0" },
-    { name = "daytona", specifier = ">=0.113.0,<1.0.0" },
-    { name = "deepagents", editable = "../deepagents" },
-    { name = "deepagents-cli", extras = ["anthropic", "bedrock", "cohere", "deepseek", "fireworks", "google-genai", "groq", "huggingface", "ibm", "mistralai", "nvidia", "ollama", "openai", "perplexity", "vertexai", "xai"], marker = "extra == 'all-providers'" },
-    { name = "langchain", specifier = ">=1.2.10,<2.0.0" },
-    { name = "langchain-anthropic", marker = "extra == 'anthropic'", specifier = ">=1.0.0,<2.0.0" },
-    { name = "langchain-aws", marker = "extra == 'bedrock'", specifier = ">=1.0.0,<2.0.0" },
-    { name = "langchain-cohere", marker = "extra == 'cohere'", specifier = ">=0.5.0,<1.0.0" },
-    { name = "langchain-deepseek", marker = "extra == 'deepseek'", specifier = ">=1.0.0,<2.0.0" },
-    { name = "langchain-fireworks", marker = "extra == 'fireworks'", specifier = ">=1.0.0,<2.0.0" },
-    { name = "langchain-google-genai", marker = "extra == 'google-genai'", specifier = ">=4.0.0,<5.0.0" },
-    { name = "langchain-google-vertexai", marker = "extra == 'vertexai'", specifier = ">=3.0.0,<4.0.0" },
-    { name = "langchain-groq", marker = "extra == 'groq'", specifier = ">=1.0.0,<2.0.0" },
-    { name = "langchain-huggingface", marker = "extra == 'huggingface'", specifier = ">=1.0.0,<2.0.0" },
-    { name = "langchain-ibm", marker = "extra == 'ibm'", specifier = ">=1.0.0,<2.0.0" },
-    { name = "langchain-mistralai", marker = "extra == 'mistralai'", specifier = ">=1.0.0,<2.0.0" },
-    { name = "langchain-nvidia-ai-endpoints", marker = "extra == 'nvidia'", specifier = ">=1.0.0,<2.0.0" },
-    { name = "langchain-ollama", marker = "extra == 'ollama'", specifier = ">=1.0.0,<2.0.0" },
-    { name = "langchain-openai", specifier = ">=1.1.8,<2.0.0" },
-    { name = "langchain-openai", marker = "extra == 'openai'", specifier = ">=1.1.8,<2.0.0" },
-    { name = "langchain-perplexity", marker = "extra == 'perplexity'", specifier = ">=1.0.0,<2.0.0" },
-    { name = "langchain-xai", marker = "extra == 'xai'", specifier = ">=1.0.0,<2.0.0" },
-    { name = "langgraph-checkpoint-sqlite", specifier = ">=3.0.0,<4.0.0" },
-    { name = "langsmith", specifier = ">=0.6.6" },
-    { name = "markdownify", specifier = ">=0.13.0,<2.0.0" },
-    { name = "modal", specifier = ">=0.65.0,<2.0.0" },
-    { name = "pillow", specifier = ">=10.0.0,<13.0.0" },
-    { name = "prompt-toolkit", specifier = ">=3.0.52,<4.0.0" },
-    { name = "pyperclip", specifier = ">=1.11.0,<2.0.0" },
-    { name = "python-dotenv", specifier = ">=1.0.0,<2.0.0" },
-    { name = "pyyaml", specifier = ">=6.0.0" },
-    { name = "requests", specifier = ">=2.0.0,<3.0.0" },
-    { name = "rich", specifier = ">=14.0.0,<15.0.0" },
-    { name = "rlmagents", editable = "../rlmagents" },
-    { name = "runloop-api-client", specifier = ">=0.69.0" },
-    { name = "tavily-python", specifier = ">=0.7.21,<1.0.0" },
-    { name = "textual", specifier = ">=6.0.0,<8.0.0" },
-    { name = "textual-autocomplete", specifier = ">=3.0.0,<5.0.0" },
-    { name = "tomli-w", specifier = ">=1.0.0,<2.0.0" },
-]
-provides-extras = ["anthropic", "bedrock", "cohere", "deepseek", "fireworks", "google-genai", "groq", "huggingface", "ibm", "mistralai", "nvidia", "ollama", "openai", "perplexity", "vertexai", "xai", "all-providers"]
-
-[package.metadata.requires-dev]
-test = [
-    { name = "build", specifier = ">=1.0.0,<2.0.0" },
-    { name = "pytest", specifier = ">=8.3.4,<10.0.0" },
-    { name = "pytest-asyncio", specifier = ">=0.25.3,<2.0.0" },
-    { name = "pytest-cov", specifier = ">=6.0.0,<8.0.0" },
-    { name = "pytest-mock", specifier = ">=3.14.0,<4.0.0" },
-    { name = "pytest-socket", specifier = ">=0.7.0,<1.0.0" },
-    { name = "pytest-timeout", specifier = ">=2.3.1,<3.0.0" },
-    { name = "pytest-watcher", specifier = ">=0.3.4,<1.0.0" },
-    { name = "pytest-xdist", specifier = ">=3.8.0,<4.0.0" },
-    { name = "responses", specifier = ">=0.25.0,<1.0.0" },
-    { name = "ruff", specifier = ">=0.14.0,<1.0.0" },
-    { name = "twine", specifier = ">=6.0.0,<7.0.0" },
-    { name = "ty", specifier = ">=0.0.1,<1.0.0" },
 ]
 
 [[package]]
@@ -4208,6 +3987,10 @@ requires-dist = [
 ]
 
 [package.metadata.requires-dev]
+dev = [
+    { name = "langchain-deepseek", specifier = ">=1.0.1" },
+    { name = "langchain-openai", specifier = ">=1.1.9" },
+]
 test = [
     { name = "pytest", specifier = ">=8.3.4" },
     { name = "pytest-asyncio", specifier = ">=0.25.3" },
@@ -4215,6 +3998,183 @@ test = [
     { name = "pytest-mock", specifier = ">=3.14.0" },
     { name = "pytest-timeout", specifier = ">=2.3.1" },
     { name = "ruff", specifier = ">=0.9.7" },
+]
+
+[[package]]
+name = "rlmagents-cli"
+version = "0.0.21"
+source = { editable = "." }
+dependencies = [
+    { name = "aiosqlite" },
+    { name = "daytona" },
+    { name = "langchain" },
+    { name = "langchain-openai" },
+    { name = "langgraph-checkpoint-sqlite" },
+    { name = "langsmith" },
+    { name = "markdownify" },
+    { name = "modal" },
+    { name = "pillow" },
+    { name = "prompt-toolkit" },
+    { name = "pyperclip" },
+    { name = "python-dotenv" },
+    { name = "pyyaml" },
+    { name = "requests" },
+    { name = "rich" },
+    { name = "rlmagents" },
+    { name = "runloop-api-client" },
+    { name = "tavily-python" },
+    { name = "textual" },
+    { name = "textual-autocomplete" },
+    { name = "tomli-w" },
+]
+
+[package.optional-dependencies]
+all-providers = [
+    { name = "langchain-anthropic" },
+    { name = "langchain-aws" },
+    { name = "langchain-cohere" },
+    { name = "langchain-deepseek" },
+    { name = "langchain-fireworks" },
+    { name = "langchain-google-genai" },
+    { name = "langchain-google-vertexai" },
+    { name = "langchain-groq" },
+    { name = "langchain-huggingface" },
+    { name = "langchain-ibm" },
+    { name = "langchain-mistralai" },
+    { name = "langchain-nvidia-ai-endpoints" },
+    { name = "langchain-ollama" },
+    { name = "langchain-openai" },
+    { name = "langchain-perplexity" },
+    { name = "langchain-xai" },
+]
+anthropic = [
+    { name = "langchain-anthropic" },
+]
+bedrock = [
+    { name = "langchain-aws" },
+]
+cohere = [
+    { name = "langchain-cohere" },
+]
+deepseek = [
+    { name = "langchain-deepseek" },
+]
+fireworks = [
+    { name = "langchain-fireworks" },
+]
+google-genai = [
+    { name = "langchain-google-genai" },
+]
+groq = [
+    { name = "langchain-groq" },
+]
+huggingface = [
+    { name = "langchain-huggingface" },
+]
+ibm = [
+    { name = "langchain-ibm" },
+]
+mistralai = [
+    { name = "langchain-mistralai" },
+]
+nvidia = [
+    { name = "langchain-nvidia-ai-endpoints" },
+]
+ollama = [
+    { name = "langchain-ollama" },
+]
+openai = [
+    { name = "langchain-openai" },
+]
+perplexity = [
+    { name = "langchain-perplexity" },
+]
+vertexai = [
+    { name = "langchain-google-vertexai" },
+]
+xai = [
+    { name = "langchain-xai" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "langchain-deepseek" },
+]
+test = [
+    { name = "build" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "pytest-cov" },
+    { name = "pytest-mock" },
+    { name = "pytest-socket" },
+    { name = "pytest-timeout" },
+    { name = "pytest-watcher" },
+    { name = "pytest-xdist" },
+    { name = "responses" },
+    { name = "ruff" },
+    { name = "twine" },
+    { name = "ty" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "aiosqlite", specifier = ">=0.19.0,<1.0.0" },
+    { name = "daytona", specifier = ">=0.113.0,<1.0.0" },
+    { name = "langchain", specifier = ">=1.2.10,<2.0.0" },
+    { name = "langchain-anthropic", marker = "extra == 'anthropic'", specifier = ">=1.0.0,<2.0.0" },
+    { name = "langchain-aws", marker = "extra == 'bedrock'", specifier = ">=1.0.0,<2.0.0" },
+    { name = "langchain-cohere", marker = "extra == 'cohere'", specifier = ">=0.5.0,<1.0.0" },
+    { name = "langchain-deepseek", marker = "extra == 'deepseek'", specifier = ">=1.0.0,<2.0.0" },
+    { name = "langchain-fireworks", marker = "extra == 'fireworks'", specifier = ">=1.0.0,<2.0.0" },
+    { name = "langchain-google-genai", marker = "extra == 'google-genai'", specifier = ">=4.0.0,<5.0.0" },
+    { name = "langchain-google-vertexai", marker = "extra == 'vertexai'", specifier = ">=3.0.0,<4.0.0" },
+    { name = "langchain-groq", marker = "extra == 'groq'", specifier = ">=1.0.0,<2.0.0" },
+    { name = "langchain-huggingface", marker = "extra == 'huggingface'", specifier = ">=1.0.0,<2.0.0" },
+    { name = "langchain-ibm", marker = "extra == 'ibm'", specifier = ">=1.0.0,<2.0.0" },
+    { name = "langchain-mistralai", marker = "extra == 'mistralai'", specifier = ">=1.0.0,<2.0.0" },
+    { name = "langchain-nvidia-ai-endpoints", marker = "extra == 'nvidia'", specifier = ">=1.0.0,<2.0.0" },
+    { name = "langchain-ollama", marker = "extra == 'ollama'", specifier = ">=1.0.0,<2.0.0" },
+    { name = "langchain-openai", specifier = ">=1.1.8,<2.0.0" },
+    { name = "langchain-openai", marker = "extra == 'openai'", specifier = ">=1.1.8,<2.0.0" },
+    { name = "langchain-perplexity", marker = "extra == 'perplexity'", specifier = ">=1.0.0,<2.0.0" },
+    { name = "langchain-xai", marker = "extra == 'xai'", specifier = ">=1.0.0,<2.0.0" },
+    { name = "langgraph-checkpoint-sqlite", specifier = ">=3.0.0,<4.0.0" },
+    { name = "langsmith", specifier = ">=0.6.6" },
+    { name = "markdownify", specifier = ">=0.13.0,<2.0.0" },
+    { name = "modal", specifier = ">=0.65.0,<2.0.0" },
+    { name = "pillow", specifier = ">=10.0.0,<13.0.0" },
+    { name = "prompt-toolkit", specifier = ">=3.0.52,<4.0.0" },
+    { name = "pyperclip", specifier = ">=1.11.0,<2.0.0" },
+    { name = "python-dotenv", specifier = ">=1.0.0,<2.0.0" },
+    { name = "pyyaml", specifier = ">=6.0.0" },
+    { name = "requests", specifier = ">=2.0.0,<3.0.0" },
+    { name = "rich", specifier = ">=14.0.0,<15.0.0" },
+    { name = "rlmagents", editable = "../rlmagents" },
+    { name = "rlmagents-cli", extras = ["anthropic", "bedrock", "cohere", "deepseek", "fireworks", "google-genai", "groq", "huggingface", "ibm", "mistralai", "nvidia", "ollama", "openai", "perplexity", "vertexai", "xai"], marker = "extra == 'all-providers'" },
+    { name = "runloop-api-client", specifier = ">=0.69.0" },
+    { name = "tavily-python", specifier = ">=0.7.21,<1.0.0" },
+    { name = "textual", specifier = ">=6.0.0,<8.0.0" },
+    { name = "textual-autocomplete", specifier = ">=3.0.0,<5.0.0" },
+    { name = "tomli-w", specifier = ">=1.0.0,<2.0.0" },
+]
+provides-extras = ["anthropic", "bedrock", "cohere", "deepseek", "fireworks", "google-genai", "groq", "huggingface", "ibm", "mistralai", "nvidia", "ollama", "openai", "perplexity", "vertexai", "xai", "all-providers"]
+
+[package.metadata.requires-dev]
+dev = [{ name = "langchain-deepseek", specifier = ">=1.0.1" }]
+test = [
+    { name = "build", specifier = ">=1.0.0,<2.0.0" },
+    { name = "pytest", specifier = ">=8.3.4,<10.0.0" },
+    { name = "pytest-asyncio", specifier = ">=0.25.3,<2.0.0" },
+    { name = "pytest-cov", specifier = ">=6.0.0,<8.0.0" },
+    { name = "pytest-mock", specifier = ">=3.14.0,<4.0.0" },
+    { name = "pytest-socket", specifier = ">=0.7.0,<1.0.0" },
+    { name = "pytest-timeout", specifier = ">=2.3.1,<3.0.0" },
+    { name = "pytest-watcher", specifier = ">=0.3.4,<1.0.0" },
+    { name = "pytest-xdist", specifier = ">=3.8.0,<4.0.0" },
+    { name = "responses", specifier = ">=0.25.0,<1.0.0" },
+    { name = "ruff", specifier = ">=0.14.0,<1.0.0" },
+    { name = "twine", specifier = ">=6.0.0,<7.0.0" },
+    { name = "ty", specifier = ">=0.0.1,<1.0.0" },
 ]
 
 [[package]]
@@ -4941,18 +4901,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/bd/95/615e72cd27b85b61eec764a5ca51bd94d40b5adea5ff47567d9ebc4d275a/watchfiles-1.1.1-pp311-pypy311_pp73-macosx_11_0_arm64.whl", hash = "sha256:89eef07eee5e9d1fda06e38822ad167a044153457e6fd997f8a858ab7564a336", size = 396117, upload-time = "2025-10-14T15:06:11.28Z" },
     { url = "https://files.pythonhosted.org/packages/c9/81/e7fe958ce8a7fb5c73cc9fb07f5aeaf755e6aa72498c57d760af760c91f8/watchfiles-1.1.1-pp311-pypy311_pp73-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:ce19e06cbda693e9e7686358af9cd6f5d61312ab8b00488bc36f5aabbaf77e24", size = 450493, upload-time = "2025-10-14T15:06:12.321Z" },
     { url = "https://files.pythonhosted.org/packages/6e/d4/ed38dd3b1767193de971e694aa544356e63353c33a85d948166b5ff58b9e/watchfiles-1.1.1-pp311-pypy311_pp73-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:3e6f39af2eab0118338902798b5aa6664f46ff66bc0280de76fca67a7f262a49", size = 457546, upload-time = "2025-10-14T15:06:13.372Z" },
-]
-
-[[package]]
-name = "wcmatch"
-version = "10.1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "bracex" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/79/3e/c0bdc27cf06f4e47680bd5803a07cb3dfd17de84cde92dd217dcb9e05253/wcmatch-10.1.tar.gz", hash = "sha256:f11f94208c8c8484a16f4f48638a85d771d9513f4ab3f37595978801cb9465af", size = 117421, upload-time = "2025-06-22T19:14:02.49Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/eb/d8/0d1d2e9d3fabcf5d6840362adcf05f8cf3cd06a73358140c3a97189238ae/wcmatch-10.1-py3-none-any.whl", hash = "sha256:5848ace7dbb0476e5e55ab63c6bbd529745089343427caa5537f230cc01beb8a", size = 39854, upload-time = "2025-06-22T19:14:00.978Z" },
 ]
 
 [[package]]

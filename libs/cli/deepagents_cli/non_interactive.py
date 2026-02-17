@@ -1,4 +1,4 @@
-"""Non-interactive execution mode for deepagents CLI.
+"""Non-interactive execution mode for rlmagents CLI.
 
 Provides `run_non_interactive` which runs a single user task against the
 agent graph, streams results to stdout, and exits with an appropriate code.
@@ -483,7 +483,12 @@ async def _run_agent_loop(
         console.print("[green]✓ Task completed[/green]")
 
 
-def _build_non_interactive_header(assistant_id: str, thread_id: str) -> Text:
+def _build_non_interactive_header(
+    assistant_id: str,
+    thread_id: str,
+    *,
+    harness: HarnessType = "rlmagents",
+) -> Text:
     """Build the non-interactive mode header with model, agent, and thread info.
 
     The thread ID is rendered as a clickable hyperlink when LangSmith tracing
@@ -492,6 +497,7 @@ def _build_non_interactive_header(assistant_id: str, thread_id: str) -> Text:
     Args:
         assistant_id: Agent identifier.
         thread_id: Thread identifier.
+        harness: Agent harness runtime.
 
     Returns:
         Rich Text object with the formatted header line.
@@ -500,6 +506,9 @@ def _build_non_interactive_header(assistant_id: str, thread_id: str) -> Text:
     parts: list[tuple[str, str | Style]] = [
         (f"Agent: {assistant_id}{default_label}", "dim"),
     ]
+
+    if harness == "rlmagents":
+        parts.extend([(" | ", "dim"), ("Harness: rlmagents [RLM]", "bold cyan")])
 
     if settings.model_name:
         parts.extend([(" | ", "dim"), (f"Model: {settings.model_name}", "dim")])
@@ -524,7 +533,7 @@ def _build_non_interactive_header(assistant_id: str, thread_id: str) -> Text:
 async def run_non_interactive(
     message: str,
     assistant_id: str = "agent",
-    harness: HarnessType = "deepagents",
+    harness: HarnessType = "rlmagents",
     model_name: str | None = None,
     model_params: dict[str, Any] | None = None,
     sandbox_type: str = "none",  # str (not None) to match argparse choices
@@ -549,7 +558,8 @@ async def run_non_interactive(
     Args:
         message: The task/message to execute.
         assistant_id: Agent identifier for memory storage.
-        harness: Agent harness runtime (`deepagents` or `rlmagents`).
+        harness: Agent harness runtime (`rlmagents` or compatibility alias
+            `deepagents`).
         model_name: Optional model name to use.
         model_params: Extra kwargs from `--model-params` to pass to the model.
 
@@ -595,7 +605,11 @@ async def run_non_interactive(
 
     if not quiet:
         console.print("[dim]Running task non-interactively...[/dim]")
-        header = _build_non_interactive_header(assistant_id, thread_id)
+        header = _build_non_interactive_header(
+            assistant_id,
+            thread_id,
+            harness=harness,
+        )
         console.print(header)
         console.print()
 

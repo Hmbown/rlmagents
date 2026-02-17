@@ -7,7 +7,7 @@ from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
 
-from deepagents.backends.protocol import SandboxBackendProtocol
+from rlmagents._harness.backends.protocol import SandboxBackendProtocol
 
 from deepagents_cli.config import console, get_glyphs
 from deepagents_cli.integrations.daytona import DaytonaProvider

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import contextlib
-import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 
@@ -451,13 +449,7 @@ class ChatInput(Vertical):
 
         # Set up history manager
         if history_file is None:
-            primary_history_file = Path.home() / ".rlmagents" / "history.jsonl"
-            legacy_history_file = Path.home() / ".deepagents" / "history.jsonl"
-            if not primary_history_file.exists() and legacy_history_file.exists():
-                primary_history_file.parent.mkdir(parents=True, exist_ok=True)
-                with contextlib.suppress(OSError):
-                    shutil.copy2(legacy_history_file, primary_history_file)
-            history_file = primary_history_file
+            history_file = Path.home() / ".rlmagents" / "history.jsonl"
         self._history = HistoryManager(history_file)
 
     def compose(self) -> ComposeResult:

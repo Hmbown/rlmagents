@@ -74,8 +74,8 @@ All paths use POSIX conventions (forward slashes) via `PurePosixPath`:
 ## Usage
 
 ```python
-from deepagents.backends.state import StateBackend
-from deepagents.middleware.skills import SkillsMiddleware
+from rlmagents._harness.backends.state import StateBackend
+from rlmagents._harness.skills import SkillsMiddleware
 
 middleware = SkillsMiddleware(
     backend=my_backend,
@@ -607,7 +607,7 @@ class SkillsMiddleware(AgentMiddleware):
 
     Example:
         ```python
-        from deepagents.backends.filesystem import FilesystemBackend
+        from rlmagents._harness.backends.filesystem import FilesystemBackend
 
         backend = FilesystemBackend(root_dir="/path/to/skills")
         middleware = SkillsMiddleware(

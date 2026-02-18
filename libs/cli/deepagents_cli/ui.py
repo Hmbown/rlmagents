@@ -143,6 +143,13 @@ def format_tool_display(tool_name: str, tool_args: dict) -> str:
             query = truncate_value(query, 100)
             return f'{prefix} {tool_name}("{query}")'
 
+    elif tool_name == "web_research":
+        # Programmatic web workflow: show the query string
+        if "query" in tool_args:
+            query = str(tool_args["query"])
+            query = truncate_value(query, 100)
+            return f'{prefix} {tool_name}("{query}")'
+
     elif tool_name == "grep":
         # Grep: show the search pattern
         if "pattern" in tool_args:
@@ -277,10 +284,7 @@ def show_help() -> None:
         "  -r, --resume [ID]          Resume thread: -r for most recent, -r ID for specific"  # noqa: E501
     )
     console.print("  -a, --agent NAME           Agent to use (e.g., coder, researcher)")
-    console.print(
-        "  --harness TYPE             Agent harness: rlmagents; "
-        "deepagents compatibility alias"
-    )
+    console.print("  --harness TYPE             Agent harness: rlmagents")
     console.print("  -M, --model MODEL          Model to use (e.g., gpt-4o)")
     console.print("  -m, --message TEXT         Initial prompt to auto-submit on start")
     console.print(
@@ -390,11 +394,9 @@ def show_skills_help() -> None:
         "(highest precedence first):\n"
         "  1. .agents/skills/                 project skills\n"
         "  2. .rlmagents/skills/              project skills (primary)\n"
-        "  3. .deepagents/skills/             project skills (legacy alias)\n"
-        "  4. ~/.agents/skills/               user skills\n"
-        "  5. ~/.rlmagents/<agent>/skills/    user skills (primary)\n"
-        "  6. .deepagents/<agent>/skills/     user skills (legacy alias)\n"
-        "  7. <package>/built_in_skills/      built-in skills[/dim]",
+        "  3. ~/.agents/skills/               user skills\n"
+        "  4. ~/.rlmagents/<agent>/skills/    user skills (primary)\n"
+        "  5. <package>/built_in_skills/      built-in skills[/dim]",
         style=COLORS["dim"],
     )
     console.print(

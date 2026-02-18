@@ -1,7 +1,6 @@
 """Thread management using LangGraph's built-in checkpoint persistence."""
 
 import logging
-import shutil
 import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -85,27 +84,12 @@ def format_timestamp(iso_timestamp: str | None) -> str:
 def get_db_path() -> Path:
     """Get path to global database.
 
-    Migrates legacy `.deepagents/sessions.db` to `.rlmagents/sessions.db`
-    on first access when the primary DB does not yet exist.
-
     Returns:
         Path to the SQLite database file.
     """
     db_dir = Path.home() / ".rlmagents"
     db_dir.mkdir(parents=True, exist_ok=True)
-    primary_path = db_dir / "sessions.db"
-    legacy_path = Path.home() / ".deepagents" / "sessions.db"
-    if not primary_path.exists() and legacy_path.exists():
-        try:
-            shutil.copy2(legacy_path, primary_path)
-        except OSError:
-            logger.warning(
-                "Failed to migrate sessions DB from %s to %s",
-                legacy_path,
-                primary_path,
-                exc_info=True,
-            )
-    return primary_path
+    return db_dir / "sessions.db"
 
 
 def generate_thread_id() -> str:

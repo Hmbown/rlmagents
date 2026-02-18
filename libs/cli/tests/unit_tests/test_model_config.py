@@ -542,7 +542,7 @@ class TestModelPersistenceBetweenSessions:
         from deepagents_cli.config import _get_default_model_spec
 
         # Use a temporary config path
-        config_path = tmp_path / ".deepagents" / "config.toml"
+        config_path = tmp_path / ".rlmagents" / "config.toml"
 
         # Step 1: Save model to config (simulating /model anthropic:claude-opus-4-5)
         save_recent_model("anthropic:claude-opus-4-5", config_path)
@@ -579,7 +579,7 @@ class TestModelPersistenceBetweenSessions:
         from deepagents_cli.config import _get_default_model_spec
         from deepagents_cli.model_config import save_default_model
 
-        config_path = tmp_path / ".deepagents" / "config.toml"
+        config_path = tmp_path / ".rlmagents" / "config.toml"
 
         # Save an OpenAI model as default
         save_default_model("openai:gpt-5.2", config_path)
@@ -645,6 +645,60 @@ class TestGetAvailableModels:
         assert any(
             "Could not import profiles" in record.message for record in caplog.records
         )
+
+    def test_adds_deepseek_fallback_models_when_package_installed(self) -> None:
+        """Adds DeepSeek fallback models when profile discovery misses provider."""
+        with (
+            patch(
+                "deepagents_cli.model_config._get_provider_profile_modules",
+                return_value=[("anthropic", "langchain_anthropic.data._profiles")],
+            ),
+            patch(
+                "deepagents_cli.model_config._load_provider_profiles",
+                side_effect=ImportError("not installed"),
+            ),
+            patch(
+                "deepagents_cli.model_config._has_langchain_deepseek",
+                return_value=True,
+            ),
+        ):
+            models = get_available_models()
+
+        assert "deepseek" in models
+        assert "deepseek-chat" in models["deepseek"]
+        assert "deepseek-reasoner" in models["deepseek"]
+
+    def test_adds_reasoner_when_deepseek_profile_missing_it(self) -> None:
+        """Ensures reasoner appears even when discovered DeepSeek list is partial."""
+        fake_profiles = {
+            "deepseek-chat": {"tool_calling": True},
+        }
+
+        def mock_load(module_path: str) -> dict[str, Any]:
+            if module_path == "langchain_deepseek.data._profiles":
+                return fake_profiles
+            msg = "not installed"
+            raise ImportError(msg)
+
+        with (
+            patch(
+                "deepagents_cli.model_config._get_provider_profile_modules",
+                return_value=[("deepseek", "langchain_deepseek.data._profiles")],
+            ),
+            patch(
+                "deepagents_cli.model_config._load_provider_profiles",
+                side_effect=mock_load,
+            ),
+            patch(
+                "deepagents_cli.model_config._has_langchain_deepseek",
+                return_value=True,
+            ),
+        ):
+            models = get_available_models()
+
+        assert "deepseek-chat" in models["deepseek"]
+        assert "deepseek-reasoner" in models["deepseek"]
+        assert models["deepseek"].count("deepseek-chat") == 1
 
 
 class TestGetAvailableModelsMergesConfig:

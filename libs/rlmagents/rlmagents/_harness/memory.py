@@ -12,8 +12,9 @@ loaded and provides persistent context.
 ## Usage
 
 ```python
-from deepagents import MemoryMiddleware
-from deepagents.backends.filesystem import FilesystemBackend
+from rlmagents import create_rlm_agent
+from rlmagents._harness.backends.filesystem import FilesystemBackend
+from rlmagents._harness.memory import MemoryMiddleware
 
 # Security: FilesystemBackend allows reading/writing from the entire filesystem.
 # Either ensure the agent is running within a sandbox OR add human-in-the-loop (HIL)
@@ -23,12 +24,12 @@ backend = FilesystemBackend(root_dir="/")
 middleware = MemoryMiddleware(
     backend=backend,
     sources=[
-        "~/.deepagents/AGENTS.md",
-        "./.deepagents/AGENTS.md",
+        "~/.rlmagents/AGENTS.md",
+        "./.rlmagents/AGENTS.md",
     ],
 )
 
-agent = create_deep_agent(middleware=[middleware])
+agent = create_rlm_agent(middleware=[middleware])
 ```
 
 ## Memory Sources
@@ -177,8 +178,8 @@ class MemoryMiddleware(AgentMiddleware):
         Args:
             backend: Backend instance or factory function that takes runtime
                      and returns a backend. Use a factory for StateBackend.
-            sources: List of memory file paths to load (e.g., `["~/.deepagents/AGENTS.md",
-                     "./.deepagents/AGENTS.md"]`).
+            sources: List of memory file paths to load (e.g., `["~/.rlmagents/AGENTS.md",
+                     "./.rlmagents/AGENTS.md"]`).
 
                      Display names are automatically derived from the paths.
 

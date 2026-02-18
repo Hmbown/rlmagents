@@ -79,7 +79,7 @@ class LocalShellBackend(FilesystemBackend, SandboxBackendProtocol):
 
     Examples:
         ```python
-        from deepagents.backends import LocalShellBackend
+        from rlmagents._harness.backends.local_shell import LocalShellBackend
 
         # Create backend with explicit environment
         backend = LocalShellBackend(root_dir="/home/user/project", env={"PATH": "/usr/bin:/bin"})

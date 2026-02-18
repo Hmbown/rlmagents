@@ -46,7 +46,7 @@ from deepagents_cli.config import (
 from deepagents_cli.file_ops import FileOpTracker
 from deepagents_cli.model_config import ModelConfigError
 from deepagents_cli.sessions import generate_thread_id, get_checkpointer
-from deepagents_cli.tools import fetch_url, http_request, web_search
+from deepagents_cli.tools import fetch_url, http_request, web_research, web_search
 
 if TYPE_CHECKING:
     from langchain_core.runnables import RunnableConfig
@@ -558,8 +558,7 @@ async def run_non_interactive(
     Args:
         message: The task/message to execute.
         assistant_id: Agent identifier for memory storage.
-        harness: Agent harness runtime (`rlmagents` or compatibility alias
-            `deepagents`).
+        harness: Agent harness runtime (`rlmagents`).
         model_name: Optional model name to use.
         model_params: Extra kwargs from `--model-params` to pass to the model.
 
@@ -643,7 +642,7 @@ async def run_non_interactive(
         async with get_checkpointer() as checkpointer:
             tools = [http_request, fetch_url]
             if settings.has_tavily:
-                tools.append(web_search)
+                tools.extend((web_search, web_research))
 
             # If an allow-list is provided, enable shell but disable
             # auto-approve so HITL can gate commands. If no allow-list, disable

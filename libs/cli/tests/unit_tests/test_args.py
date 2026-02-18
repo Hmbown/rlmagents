@@ -119,7 +119,7 @@ class TestTopLevelHelp:
         output = buf.getvalue()
 
         # Should contain global help content
-        assert "deepagents" in output.lower()
+        assert "rlmagents" in output.lower()
         assert "--help" in output
 
     def test_help_subcommand_parses(self) -> None:

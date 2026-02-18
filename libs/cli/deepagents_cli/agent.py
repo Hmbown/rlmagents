@@ -48,12 +48,7 @@ from deepagents_cli.subagents import list_subagents
 DEFAULT_AGENT_NAME = "agent"
 """The default agent name used when no `-a` flag is provided."""
 
-HarnessType = Literal["rlmagents", "deepagents"]
-
-# Backward-compatibility alias for tests and integration hooks that still patch
-# `create_deep_agent`. In rlmagents-cli, both harness names resolve to the
-# rlmagents implementation.
-create_deep_agent = create_rlm_agent
+HarnessType = Literal["rlmagents"]
 
 
 def list_agents() -> None:
@@ -281,6 +276,26 @@ def _format_fetch_url_description(
     )
 
 
+def _format_web_research_description(
+    tool_call: ToolCall, _state: AgentState[Any], _runtime: Runtime[Any]
+) -> str:
+    """Format web_research tool call for approval prompt.
+
+    Returns:
+        Formatted description string for the web_research tool call.
+    """
+    args = tool_call["args"]
+    query = args.get("query", "unknown")
+    max_results = args.get("max_results", 5)
+    fetch_top_n = args.get("fetch_top_n", 3)
+
+    return (
+        f"Query: {query}\nMax search results: {max_results}\n"
+        f"Pages to fetch: {fetch_top_n}\n\n"
+        f"{get_glyphs().warning}  This runs multi-step Tavily + URL fetch research"
+    )
+
+
 def _format_task_description(
     tool_call: ToolCall, _state: AgentState[Any], _runtime: Runtime[Any]
 ) -> str:
@@ -363,6 +378,11 @@ def _add_interrupt_on() -> dict[str, InterruptOnConfig]:
         "description": _format_fetch_url_description,  # type: ignore[typeddict-item]
     }
 
+    web_research_interrupt_config: InterruptOnConfig = {
+        "allowed_decisions": ["approve", "reject"],
+        "description": _format_web_research_description,  # type: ignore[typeddict-item]
+    }
+
     task_interrupt_config: InterruptOnConfig = {
         "allowed_decisions": ["approve", "reject"],
         "description": _format_task_description,  # type: ignore[typeddict-item]
@@ -374,6 +394,7 @@ def _add_interrupt_on() -> dict[str, InterruptOnConfig]:
         "edit_file": edit_file_interrupt_config,
         "web_search": web_search_interrupt_config,
         "fetch_url": fetch_url_interrupt_config,
+        "web_research": web_research_interrupt_config,
         "task": task_interrupt_config,
     }
 
@@ -404,7 +425,6 @@ def create_cli_agent(
         harness: Agent harness runtime to use.
 
             - `'rlmagents'`: Use the rlmagents recursive harness (default)
-            - `'deepagents'`: Compatibility alias for `'rlmagents'`
         tools: Additional tools to provide to agent
         sandbox: Optional sandbox backend for remote execution
             (e.g., `ModalBackend`).
@@ -612,40 +632,30 @@ def create_cli_agent(
 
     # Create the agent
     # Use provided checkpointer or fallback to InMemorySaver
-    resolved_harness: HarnessType = harness
-    if (
-        resolved_harness in {"rlmagents", "deepagents"}
-        and sandbox is None
-        and enable_shell
-    ):
+    if harness == "rlmagents" and sandbox is None and enable_shell:
         # Patch FilesystemMiddleware so the SDK constructs our subclass with
         # per-command timeout support on the execute tool. Only needed in local
         # shell mode -- remote sandbox backends do not accept the timeout kwarg.
         patch_filesystem_middleware()
     final_checkpointer = checkpointer if checkpointer is not None else InMemorySaver()
 
-    if resolved_harness in {"rlmagents", "deepagents"}:
-        # Enable RLM recursive sub_query()/llm_query() by default in CLI mode.
-        # If the provided model is an instantiated BaseChatModel, reuse it for
-        # sub-queries so the full RLM toolchain is available.
-        sub_query_model = model if isinstance(model, BaseChatModel) else None
-        factory = (
-            create_rlm_agent
-            if resolved_harness == "rlmagents"
-            else create_deep_agent
-        )
-        agent = factory(
-            model=model,
-            system_prompt=system_prompt,
-            tools=tools,
-            backend=composite_backend,
-            middleware=agent_middleware,
-            interrupt_on=interrupt_on,
-            checkpointer=final_checkpointer,
-            subagents=custom_subagents or None,
-            sub_query_model=sub_query_model,
-        ).with_config(config)
-    else:
+    if harness != "rlmagents":
         msg = f"Unsupported harness: {harness!r}"
         raise ValueError(msg)
+
+    # Enable RLM recursive sub_query()/llm_query() by default in CLI mode.
+    # If the provided model is an instantiated BaseChatModel, reuse it for
+    # sub-queries so the full RLM toolchain is available.
+    sub_query_model = model if isinstance(model, BaseChatModel) else None
+    agent = create_rlm_agent(
+        model=model,
+        system_prompt=system_prompt,
+        tools=tools,
+        backend=composite_backend,
+        middleware=agent_middleware,
+        interrupt_on=interrupt_on,
+        checkpointer=final_checkpointer,
+        subagents=custom_subagents or None,
+        sub_query_model=sub_query_model,
+    ).with_config(config)
     return agent, composite_backend

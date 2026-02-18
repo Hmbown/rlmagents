@@ -6,9 +6,9 @@ persistent store for memories).
 
 Examples:
     ```python
-    from deepagents.backends.composite import CompositeBackend
-    from deepagents.backends.state import StateBackend
-    from deepagents.backends.store import StoreBackend
+    from rlmagents._harness.backends.composite import CompositeBackend
+    from rlmagents._harness.backends.state import StateBackend
+    from rlmagents._harness.backends.store import StoreBackend
 
     runtime = make_runtime()
     composite = CompositeBackend(default=StateBackend(runtime), routes={"/memories/": StoreBackend(runtime)})

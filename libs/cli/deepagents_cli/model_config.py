@@ -148,14 +148,8 @@ class ProviderConfig(TypedDict, total=False):
 DEFAULT_CONFIG_DIR = Path.home() / ".rlmagents"
 """Directory for user-level RLMAgents configuration (`~/.rlmagents`)."""
 
-LEGACY_CONFIG_DIR = Path.home() / ".deepagents"
-"""Legacy directory for deepagents compatibility (`.deepagents` under home)."""
-
 DEFAULT_CONFIG_PATH = DEFAULT_CONFIG_DIR / "config.toml"
 """Path to the user's model configuration file (`~/.rlmagents/config.toml`)."""
-
-LEGACY_CONFIG_PATH = LEGACY_CONFIG_DIR / "config.toml"
-"""Legacy model config path used for read fallback (deepagents home config)."""
 
 PROVIDER_API_KEY_ENV: dict[str, str] = {
     "anthropic": "ANTHROPIC_API_KEY",
@@ -190,6 +184,11 @@ _available_models_cache: dict[str, list[str]] | None = None
 _builtin_providers_cache: dict[str, Any] | None = None
 _default_config_cache: ModelConfig | None = None
 
+_DEEPSEEK_FALLBACK_MODELS: tuple[str, ...] = (
+    "deepseek-chat",
+    "deepseek-reasoner",
+)
+
 
 def _resolve_read_config_path(config_path: Path | None) -> Path:
     """Resolve model config path for read operations.
@@ -198,14 +197,11 @@ def _resolve_read_config_path(config_path: Path | None) -> Path:
         config_path: Explicit config path override.
 
     Returns:
-        Explicit path when provided. Otherwise the primary rlmagents path,
-        falling back to legacy deepagents path if primary does not exist.
+        Explicit path when provided. Otherwise the primary rlmagents path.
     """
     if config_path is not None:
         return config_path
-    if DEFAULT_CONFIG_PATH.exists() or not LEGACY_CONFIG_PATH.exists():
-        return DEFAULT_CONFIG_PATH
-    return LEGACY_CONFIG_PATH
+    return DEFAULT_CONFIG_PATH
 
 
 def clear_caches() -> None:
@@ -323,6 +319,11 @@ def _load_provider_profiles(module_path: str) -> dict[str, Any]:
     return getattr(module, "_PROFILES", {})
 
 
+def _has_langchain_deepseek() -> bool:
+    """Return whether `langchain-deepseek` is installed."""
+    return importlib.util.find_spec("langchain_deepseek") is not None
+
+
 def get_available_models() -> dict[str, list[str]]:
     """Get available models dynamically from installed LangChain provider packages.
 
@@ -375,6 +376,17 @@ def get_available_models() -> dict[str, list[str]]:
         models.sort()
         if models:
             available[provider] = models
+
+    # `langchain-deepseek` may not expose profile catalogs through the same
+    # discovery path as other providers. Ensure core DeepSeek models appear in
+    # `/model` when the package is installed.
+    if _has_langchain_deepseek():
+        deepseek_models = available.setdefault("deepseek", [])
+        existing = set(deepseek_models)
+        for model_name in _DEEPSEEK_FALLBACK_MODELS:
+            if model_name not in existing:
+                deepseek_models.append(model_name)
+        deepseek_models.sort()
 
     # Merge in models from config file (custom providers like ollama, fireworks)
     config = ModelConfig.load()
@@ -498,8 +510,7 @@ class ModelConfig:
         Args:
             config_path: Path to config file.
 
-                Defaults to `~/.rlmagents/config.toml`, with read fallback to
-                the legacy deepagents home config when primary is absent.
+                Defaults to `~/.rlmagents/config.toml`.
 
         Returns:
             Parsed `ModelConfig` instance.

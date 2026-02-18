@@ -7,8 +7,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-from deepagents.middleware.skills import SkillMetadata, _parse_skill_metadata
 from rich.console import Console
+from rlmagents._harness.skills import SkillMetadata, _parse_skill_metadata
 
 from deepagents_cli.main import parse_args
 from deepagents_cli.skills.commands import (

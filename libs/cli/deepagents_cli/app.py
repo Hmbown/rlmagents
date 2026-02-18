@@ -412,8 +412,7 @@ class DeepAgentsApp(App):
         Args:
             agent: Pre-configured LangGraph agent (optional for standalone mode)
             assistant_id: Agent identifier for memory storage
-            harness: Agent harness runtime (`rlmagents` or compatibility alias
-                `deepagents`)
+            harness: Agent harness runtime (`rlmagents`)
             backend: Backend for file operations
             auto_approve: Whether to start with auto-approve enabled
             cwd: Current working directory to display
@@ -2068,7 +2067,7 @@ async def run_textual_app(
     Args:
         agent: Pre-configured LangGraph agent (optional)
         assistant_id: Agent identifier for memory storage
-        harness: Agent harness runtime (`rlmagents` or compatibility alias `deepagents`)
+        harness: Agent harness runtime (`rlmagents`)
         backend: Backend for file operations
         auto_approve: Whether to start with auto-approve enabled
         cwd: Current working directory to display

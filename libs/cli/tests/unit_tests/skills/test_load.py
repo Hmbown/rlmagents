@@ -316,7 +316,7 @@ class TestListSkillsAliasDirectories:
     """Test `list_skills` with `.agents` alias directories."""
 
     def test_user_agent_skills_dir_precedence(self, tmp_path: Path) -> None:
-        """Test that `~/.agents/skills` overrides `~/.deepagents/agent/skills`."""
+        """Test that `~/.agents/skills` overrides `~/.rlmagents/agent/skills`."""
         user_deepagents_dir = tmp_path / "user_deepagents_skills"
         user_agent_dir = tmp_path / "user_agent_skills"
 
@@ -345,7 +345,7 @@ class TestListSkillsAliasDirectories:
         assert skills[0]["source"] == "user"
 
     def test_project_agent_skills_dir_precedence(self, tmp_path: Path) -> None:
-        """Test that `.agents/skills` overrides `.deepagents/skills`."""
+        """Test that `.agents/skills` overrides `.rlmagents/skills`."""
         project_deepagents_dir = tmp_path / "project_deepagents_skills"
         project_agent_dir = tmp_path / "project_agent_skills"
 
@@ -672,7 +672,7 @@ class TestListSkillsBuiltIn:
         built_in_dir.mkdir()
 
         original_list = __import__(
-            "deepagents.middleware.skills", fromlist=["_list_skills"]
+            "rlmagents._harness.skills", fromlist=["_list_skills"]
         )._list_skills
 
         call_count = 0

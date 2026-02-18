@@ -1,4 +1,4 @@
-"""End-to-end unit tests for deepagents-cli with fake LLM models."""
+"""End-to-end unit tests for rlmagents-cli with fake LLM models."""
 
 import uuid
 from collections.abc import Callable, Generator, Sequence
@@ -109,7 +109,7 @@ def mock_settings(
 
 
 class TestDeepAgentsCLIEndToEnd:
-    """Test suite for end-to-end deepagents-cli functionality with fake LLM."""
+    """Test suite for end-to-end rlmagents-cli functionality with fake LLM."""
 
     def test_cli_agent_with_fake_llm_basic(self, tmp_path: Path) -> None:
         """Test basic CLI agent functionality with a fake LLM model.

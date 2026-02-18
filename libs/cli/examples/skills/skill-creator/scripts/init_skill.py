@@ -9,8 +9,8 @@ Examples:
  init_skill.py my-api-helper --path skills/private
  init_skill.py custom-skill --path /custom/location
 
-For deepagents CLI:
- init_skill.py my-skill --path ~/.deepagents/agent/skills
+For `rlmagents` CLI:
+ init_skill.py my-skill --path ~/.rlmagents/agent/skills
 """
 
 import sys
@@ -288,8 +288,8 @@ def main():
         print(" init_skill.py my-new-skill --path skills/public")
         print(" init_skill.py my-api-helper --path skills/private")
         print(" init_skill.py custom-skill --path /custom/location")
-        print("\nFor deepagents CLI:")
-        print(" init_skill.py my-skill --path ~/.deepagents/agent/skills")
+        print("\nFor rlmagents CLI:")
+        print(" init_skill.py my-skill --path ~/.rlmagents/agent/skills")
         sys.exit(1)
 
     skill_name = sys.argv[1]

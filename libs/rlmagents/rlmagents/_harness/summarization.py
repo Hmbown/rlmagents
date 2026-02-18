@@ -6,9 +6,9 @@ full context if needed later by an agent.
 ## Usage
 
 ```python
-from deepagents import create_deep_agent
-from deepagents.middleware.summarization import SummarizationMiddleware
-from deepagents.backends import FilesystemBackend
+from rlmagents import create_rlm_agent
+from rlmagents._harness.backends.filesystem import FilesystemBackend
+from rlmagents._harness.summarization import SummarizationMiddleware
 
 backend = FilesystemBackend(root_dir="/data")
 
@@ -19,7 +19,7 @@ middleware = SummarizationMiddleware(
     keep=("fraction", 0.10),
 )
 
-agent = create_deep_agent(middleware=[middleware])
+agent = create_rlm_agent(middleware=[middleware])
 ```
 
 ## Storage
@@ -69,12 +69,13 @@ from typing_extensions import TypedDict
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
-    from deepagents.backends.protocol import BACKEND_TYPES, BackendProtocol
     from langchain.agents.middleware.types import ModelRequest, ModelResponse
     from langchain.chat_models import BaseChatModel
     from langchain_core.runnables.config import RunnableConfig
     from langchain_core.tools import BaseTool
     from langgraph.runtime import Runtime
+
+    from rlmagents._harness.backends.protocol import BACKEND_TYPES, BackendProtocol
 
 logger = logging.getLogger(__name__)
 
@@ -166,7 +167,7 @@ def _compute_summarization_defaults(model: BaseChatModel) -> SummarizationDefaul
     }
 
 
-class _DeepAgentsSummarizationMiddleware(AgentMiddleware):
+class _RLMAgentsSummarizationMiddleware(AgentMiddleware):
     """Summarization middleware with backend for conversation history offloading."""
 
     state_schema = SummarizationState
@@ -201,7 +202,7 @@ class _DeepAgentsSummarizationMiddleware(AgentMiddleware):
                 Defaults to 4000.
             truncate_args_settings: Settings for truncating large tool arguments in old messages.
 
-                Provide a [`TruncateArgsSettings`][deepagents.middleware.summarization.TruncateArgsSettings]
+                Provide a [`TruncateArgsSettings`][rlmagents._harness.summarization.TruncateArgsSettings]
                 dictionary to configure when and how to truncate tool arguments. If `None`,
                 argument truncation is disabled.
 
@@ -217,8 +218,8 @@ class _DeepAgentsSummarizationMiddleware(AgentMiddleware):
 
         Example:
             ```python
-            from deepagents.middleware.summarization import SummarizationMiddleware
-            from deepagents.backends import StateBackend
+            from rlmagents._harness.backends.state import StateBackend
+            from rlmagents._harness.summarization import SummarizationMiddleware
 
             middleware = SummarizationMiddleware(
                 model="gpt-4o-mini",
@@ -239,7 +240,7 @@ class _DeepAgentsSummarizationMiddleware(AgentMiddleware):
             **deprecated_kwargs,
         )
 
-        # DeepAgents-specific attributes
+        # RLMAgents-specific attributes
         self._backend = backend
         self._history_path_prefix = history_path_prefix
 
@@ -966,4 +967,4 @@ A condensed summary follows:
 
 
 # Public alias
-SummarizationMiddleware = _DeepAgentsSummarizationMiddleware
+SummarizationMiddleware = _RLMAgentsSummarizationMiddleware

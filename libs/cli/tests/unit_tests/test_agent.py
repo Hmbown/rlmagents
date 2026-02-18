@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 from unittest.mock import Mock, patch
 
+import pytest
 from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
 from langchain_core.messages import AIMessage
 
@@ -18,6 +19,7 @@ from deepagents_cli.agent import (
     _format_execute_description,
     _format_fetch_url_description,
     _format_task_description,
+    _format_web_research_description,
     _format_web_search_description,
     _format_write_file_description,
     create_cli_agent,
@@ -212,6 +214,32 @@ def test_format_fetch_url_description_default_timeout():
 
     assert "URL: https://api.example.com" in description
     assert "Timeout: 30s" in description
+
+
+def test_format_web_research_description() -> None:
+    """Test web_research description formatting."""
+    tool_call = cast(
+        "ToolCall",
+        {
+            "name": "web_research",
+            "args": {
+                "query": "compare latency between providers",
+                "max_results": 7,
+                "fetch_top_n": 4,
+            },
+            "id": "call-8b",
+        },
+    )
+
+    description = _format_web_research_description(
+        tool_call, cast("AgentState[Any]", None), cast("Runtime[Any]", None)
+    )
+
+    assert "Query: compare latency between providers" in description
+    assert "Max search results: 7" in description
+    assert "Pages to fetch: 4" in description
+    warning = get_glyphs().warning
+    assert f"{warning}  This runs multi-step Tavily + URL fetch research" in description
 
 
 def test_format_task_description():
@@ -541,45 +569,36 @@ class TestCreateCliAgentHarnessDispatch:
         mock_settings.project_root = None
         return mock_settings
 
-    def test_deepagents_harness_uses_create_deep_agent(self, tmp_path: Path) -> None:
-        """`harness='deepagents'` should dispatch to create_deep_agent."""
+    def test_invalid_harness_raises_value_error(self, tmp_path: Path) -> None:
+        """Unsupported harness values should raise a clear error."""
         mock_settings = self._make_settings_mock(tmp_path)
-        deep_agent = Mock()
-        deep_agent.with_config.return_value = deep_agent
         rlm_agent = Mock()
         rlm_agent.with_config.return_value = rlm_agent
 
         with (
             patch("deepagents_cli.agent.settings", mock_settings),
             patch("deepagents_cli.agent.list_subagents", return_value=[]),
-            patch("deepagents_cli.agent.create_deep_agent", return_value=deep_agent),
             patch("deepagents_cli.agent.create_rlm_agent", return_value=rlm_agent),
+            pytest.raises(ValueError, match="Unsupported harness"),
         ):
             create_cli_agent(
                 model="fake-model",
                 assistant_id="agent",
-                harness="deepagents",
+                harness="invalid",  # type: ignore[arg-type]
                 enable_memory=False,
                 enable_skills=False,
                 enable_shell=False,
             )
 
-        # Exact positional/keyword signature is tested elsewhere; only dispatch here
-        assert deep_agent.with_config.called
-        assert not rlm_agent.with_config.called
-
     def test_rlmagents_harness_uses_create_rlm_agent(self, tmp_path: Path) -> None:
         """`harness='rlmagents'` should dispatch to create_rlm_agent."""
         mock_settings = self._make_settings_mock(tmp_path)
-        deep_agent = Mock()
-        deep_agent.with_config.return_value = deep_agent
         rlm_agent = Mock()
         rlm_agent.with_config.return_value = rlm_agent
 
         with (
             patch("deepagents_cli.agent.settings", mock_settings),
             patch("deepagents_cli.agent.list_subagents", return_value=[]),
-            patch("deepagents_cli.agent.create_deep_agent", return_value=deep_agent),
             patch("deepagents_cli.agent.create_rlm_agent", return_value=rlm_agent),
         ):
             create_cli_agent(
@@ -592,7 +611,6 @@ class TestCreateCliAgentHarnessDispatch:
             )
 
         assert rlm_agent.with_config.called
-        assert not deep_agent.with_config.called
 
     def test_rlmagents_harness_passes_sub_query_model(self, tmp_path: Path) -> None:
         """RLM harness should wire a chat model into sub_query()/llm_query()."""
@@ -604,7 +622,6 @@ class TestCreateCliAgentHarnessDispatch:
         with (
             patch("deepagents_cli.agent.settings", mock_settings),
             patch("deepagents_cli.agent.list_subagents", return_value=[]),
-            patch("deepagents_cli.agent.create_deep_agent"),
             patch(
                 "deepagents_cli.agent.create_rlm_agent",
                 return_value=rlm_agent,

@@ -22,7 +22,7 @@ from rlmagents._harness.backends.protocol import BackendFactory, BackendProtocol
 class SubAgent(TypedDict):
     """Specification for an agent.
 
-    When using `create_deep_agent`, subagents automatically receive a default middleware
+    When using `create_rlm_agent`, subagents automatically receive a default middleware
     stack (TodoListMiddleware, FilesystemMiddleware, SummarizationMiddleware, etc.) before
     any custom `middleware` specified in this spec.
 
@@ -503,7 +503,7 @@ class SubAgentMiddleware(AgentMiddleware):
 
     Example:
         ```python
-        from deepagents.middleware import SubAgentMiddleware
+        from rlmagents._harness.subagents import SubAgentMiddleware
         from langchain.agents import create_agent
 
         agent = create_agent(

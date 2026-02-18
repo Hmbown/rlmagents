@@ -61,7 +61,7 @@ from deepagents_cli.sessions import (
     thread_exists,
 )
 from deepagents_cli.skills import execute_skills_command, setup_skills_parser
-from deepagents_cli.tools import fetch_url, http_request, web_search
+from deepagents_cli.tools import fetch_url, http_request, web_research, web_search
 from deepagents_cli.ui import (
     build_help_parent,
     show_help,
@@ -120,7 +120,7 @@ def _resolve_harness(
         return cli_harness
 
     persisted_harness = settings.get_agent_harness(assistant_id)
-    if persisted_harness in {"rlmagents", "deepagents"}:
+    if persisted_harness == "rlmagents":
         return persisted_harness
     return "rlmagents"
 
@@ -275,12 +275,11 @@ def parse_args() -> argparse.Namespace:
 
     parser.add_argument(
         "--harness",
-        choices=["rlmagents", "deepagents"],
+        choices=["rlmagents"],
         default=None,
         metavar="TYPE",
         help=(
-            "Harness to use (default: persisted per-agent setting, else rlmagents). "
-            "'deepagents' is accepted only as a compatibility alias."
+            "Harness to use (default: persisted per-agent setting, else rlmagents)."
         ),
     )
 
@@ -423,7 +422,7 @@ async def run_textual_cli_async(
 
     Args:
         assistant_id: Agent identifier for memory storage
-        harness: Agent harness runtime (`rlmagents` or compatibility alias `deepagents`)
+        harness: Agent harness runtime (`rlmagents`)
         auto_approve: Whether to auto-approve tool usage
         sandbox_type: Type of sandbox
             ("none", "modal", "runloop", "daytona", "langsmith")
@@ -467,7 +466,7 @@ async def run_textual_cli_async(
         # Create agent with conditional tools
         tools: list[Callable[..., Any] | dict[str, Any]] = [http_request, fetch_url]
         if settings.has_tavily:
-            tools.append(web_search)
+            tools.extend((web_search, web_research))
 
         # Handle sandbox mode
         sandbox_backend = None
@@ -653,7 +652,7 @@ def cli_main() -> None:
 
     # Note: LANGSMITH_PROJECT is already overridden in config.py
     # (before LangChain imports). This ensures agent traces use
-    # DEEPAGENTS_LANGSMITH_PROJECT while shell commands use the
+    # RLMAGENTS_LANGSMITH_PROJECT while shell commands use the
     # user's original LANGSMITH_PROJECT (via LocalShellBackend env).
 
     # Check dependencies first

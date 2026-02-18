@@ -6,6 +6,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage
+from langsmith.utils import LangSmithNotFoundError
 
 from deepagents_cli import model_config
 from deepagents_cli.config import (
@@ -13,6 +14,7 @@ from deepagents_cli.config import (
     ModelResult,
     Settings,
     _create_model_from_class,
+    _create_model_via_init,
     _find_project_agent_md,
     _find_project_root,
     _get_provider_kwargs,
@@ -76,15 +78,15 @@ class TestProjectRootDetection:
 class TestProjectAgentMdFinding:
     """Test finding project-specific AGENTS.md files."""
 
-    def test_find_agent_md_in_deepagents_dir(self, tmp_path: Path) -> None:
-        """Test finding AGENTS.md in .deepagents/ directory."""
+    def test_find_agent_md_in_rlmagents_dir(self, tmp_path: Path) -> None:
+        """Test finding AGENTS.md in .rlmagents/ directory."""
         project_root = tmp_path / "project"
         project_root.mkdir()
 
-        # Create .deepagents/AGENTS.md
-        deepagents_dir = project_root / ".deepagents"
-        deepagents_dir.mkdir()
-        agent_md = deepagents_dir / "AGENTS.md"
+        # Create .rlmagents/AGENTS.md
+        rlmagents_dir = project_root / ".rlmagents"
+        rlmagents_dir.mkdir()
+        agent_md = rlmagents_dir / "AGENTS.md"
         agent_md.write_text("Project instructions")
 
         result = _find_project_agent_md(project_root)
@@ -96,7 +98,7 @@ class TestProjectAgentMdFinding:
         project_root = tmp_path / "project"
         project_root.mkdir()
 
-        # Create root-level AGENTS.md (no .deepagents/)
+        # Create root-level AGENTS.md (no .rlmagents/)
         agent_md = project_root / "AGENTS.md"
         agent_md.write_text("Project instructions")
 
@@ -110,18 +112,18 @@ class TestProjectAgentMdFinding:
         project_root.mkdir()
 
         # Create both locations
-        deepagents_dir = project_root / ".deepagents"
-        deepagents_dir.mkdir()
-        deepagents_md = deepagents_dir / "AGENTS.md"
-        deepagents_md.write_text("In .deepagents/")
+        rlmagents_dir = project_root / ".rlmagents"
+        rlmagents_dir.mkdir()
+        rlmagents_md = rlmagents_dir / "AGENTS.md"
+        rlmagents_md.write_text("In .rlmagents/")
 
         root_md = project_root / "AGENTS.md"
         root_md.write_text("In root")
 
-        # Should return both, with .deepagents/ first
+        # Should return both, with .rlmagents/ first
         result = _find_project_agent_md(project_root)
         assert len(result) == 2
-        assert result[0] == deepagents_md
+        assert result[0] == rlmagents_md
         assert result[1] == root_md
 
     def test_find_agent_md_not_found(self, tmp_path: Path) -> None:
@@ -496,7 +498,7 @@ class TestGetLangsmithProjectName:
             assert get_langsmith_project_name() is None
 
     def test_returns_project_from_settings(self) -> None:
-        """Should prefer settings.deepagents_langchain_project."""
+        """Should prefer settings.rlmagents_langsmith_project."""
         env = {
             "LANGSMITH_API_KEY": "lsv2_test",
             "LANGSMITH_TRACING": "true",
@@ -506,7 +508,7 @@ class TestGetLangsmithProjectName:
             patch.dict("os.environ", env, clear=True),
             patch("deepagents_cli.config.settings") as mock_settings,
         ):
-            mock_settings.deepagents_langchain_project = "settings-project"
+            mock_settings.rlmagents_langsmith_project = "settings-project"
             assert get_langsmith_project_name() == "settings-project"
 
     def test_falls_back_to_env_project(self) -> None:
@@ -520,8 +522,22 @@ class TestGetLangsmithProjectName:
             patch.dict("os.environ", env, clear=True),
             patch("deepagents_cli.config.settings") as mock_settings,
         ):
-            mock_settings.deepagents_langchain_project = None
+            mock_settings.rlmagents_langsmith_project = None
             assert get_langsmith_project_name() == "env-project"
+
+    def test_normalizes_legacy_aleph_project_name(self) -> None:
+        """Should map legacy aleph project name to rlmagents."""
+        env = {
+            "LANGSMITH_API_KEY": "lsv2_test",
+            "LANGSMITH_TRACING": "true",
+            "LANGSMITH_PROJECT": "aleph-rlm",
+        }
+        with (
+            patch.dict("os.environ", env, clear=True),
+            patch("deepagents_cli.config.settings") as mock_settings,
+        ):
+            mock_settings.rlmagents_langsmith_project = None
+            assert get_langsmith_project_name() == "rlmagents"
 
     def test_falls_back_to_default(self) -> None:
         """Should fall back to 'default' when no project name configured."""
@@ -533,7 +549,7 @@ class TestGetLangsmithProjectName:
             patch.dict("os.environ", env, clear=True),
             patch("deepagents_cli.config.settings") as mock_settings,
         ):
-            mock_settings.deepagents_langchain_project = None
+            mock_settings.rlmagents_langsmith_project = None
             assert get_langsmith_project_name() == "default"
 
     def test_accepts_langchain_api_key(self) -> None:
@@ -547,7 +563,7 @@ class TestGetLangsmithProjectName:
             patch.dict("os.environ", env, clear=True),
             patch("deepagents_cli.config.settings") as mock_settings,
         ):
-            mock_settings.deepagents_langchain_project = None
+            mock_settings.rlmagents_langsmith_project = None
             assert get_langsmith_project_name() == "default"
 
 
@@ -574,6 +590,16 @@ class TestFetchLangsmithProjectUrl:
         """Should return None when the LangSmith client raises."""
         with patch("langsmith.Client") as mock_client_cls:
             mock_client_cls.return_value.read_project.side_effect = OSError("timeout")
+            result = fetch_langsmith_project_url("my-project")
+
+        assert result is None
+
+    def test_returns_none_when_project_not_found(self) -> None:
+        """Should return None when the project does not exist."""
+        with patch("langsmith.Client") as mock_client_cls:
+            mock_client_cls.return_value.read_project.side_effect = (
+                LangSmithNotFoundError("Project my-project not found")
+            )
             result = fetch_langsmith_project_url("my-project")
 
         assert result is None
@@ -1184,6 +1210,21 @@ class TestCreateModelEdgeCaseParsing:
 
         create_model("")
         mock_default.assert_called_once()
+
+
+class TestCreateModelViaInit:
+    """Tests for _create_model_via_init() package hints."""
+
+    def test_deepseek_import_error_recommends_package(self) -> None:
+        """DeepSeek import errors should point to `langchain-deepseek`."""
+        with (
+            patch(
+                "deepagents_cli.config.init_chat_model",
+                side_effect=ImportError("missing"),
+            ),
+            pytest.raises(ModelConfigError, match="langchain-deepseek"),
+        ):
+            _create_model_via_init("deepseek-chat", "deepseek", {})
 
 
 class _FakeInput:

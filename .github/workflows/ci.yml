@@ -32,7 +32,7 @@ jobs:
     name: "🔍 Detect Changes"
     runs-on: ubuntu-latest
     outputs:
-      deepagents: ${{ steps.filter.outputs.deepagents }}
+      sdk: ${{ steps.filter.outputs.sdk }}
       cli: ${{ steps.filter.outputs.cli }}
       rlmagents: ${{ steps.filter.outputs.rlmagents }}
       harbor: ${{ steps.filter.outputs.harbor }}
@@ -50,7 +50,7 @@ jobs:
           # Each package filter includes workflow/action paths so that CI
           # infrastructure changes are validated against all packages.
           filters: |
-            deepagents:
+            sdk:
               - 'libs/deepagents/**'
               - '.github/workflows/ci.yml'
               - '.github/workflows/_lint.yml'
@@ -98,7 +98,7 @@ jobs:
   lint-deepagents:
     name: "🧹 Lint deepagents"
     needs: changes
-    if: needs.changes.outputs.deepagents == 'true' || github.event_name == 'push'
+    if: needs.changes.outputs.sdk == 'true' || github.event_name == 'push'
     uses: ./.github/workflows/_lint.yml
     with:
       working-directory: "libs/deepagents"
@@ -176,7 +176,7 @@ jobs:
   test-deepagents:
     name: "🧪 Test deepagents"
     needs: changes
-    if: needs.changes.outputs.deepagents == 'true' || github.event_name == 'push'
+    if: needs.changes.outputs.sdk == 'true' || github.event_name == 'push'
     strategy:
       matrix:
         python-version: ["3.11", "3.12", "3.13", "3.14"]

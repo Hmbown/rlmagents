@@ -24,23 +24,49 @@ from deepagents_cli._version import __version__
 
 logger = logging.getLogger(__name__)
 
-_VALID_AGENT_HARNESSES = frozenset({"rlmagents", "deepagents"})
+_VALID_AGENT_HARNESSES = frozenset({"rlmagents"})
+_LEGACY_LANGSMITH_PROJECT_NAMES = frozenset({"aleph-rlm", "aleph_rlm"})
 
 dotenv.load_dotenv()
+
+
+def _normalize_langsmith_project_name(project_name: str | None) -> str | None:
+    """Normalize legacy project naming to rlmagents defaults.
+
+    Args:
+        project_name: Raw project name from environment/settings.
+
+    Returns:
+        Normalized project name, or `None` when no value is available.
+    """
+    if project_name is None:
+        return None
+    normalized = project_name.strip()
+    if not normalized:
+        return None
+    if normalized.lower() in _LEGACY_LANGSMITH_PROJECT_NAMES:
+        return "rlmagents"
+    return normalized
+
 
 # CRITICAL: Override LANGSMITH_PROJECT to route agent traces to separate project
 # LangSmith reads LANGSMITH_PROJECT at invocation time, so we override it here
 # and preserve the user's original value for shell commands.
 #
-# Primary env var is `RLMAGENTS_LANGSMITH_PROJECT`; `DEEPAGENTS_LANGSMITH_PROJECT`
-# is supported as a compatibility alias.
-_rlmagents_project = os.environ.get("RLMAGENTS_LANGSMITH_PROJECT") or os.environ.get(
-    "DEEPAGENTS_LANGSMITH_PROJECT"
+# Primary env var is `RLMAGENTS_LANGSMITH_PROJECT`.
+_rlmagents_project = _normalize_langsmith_project_name(
+    os.environ.get("RLMAGENTS_LANGSMITH_PROJECT")
 )
 _original_langsmith_project = os.environ.get("LANGSMITH_PROJECT")
 if _rlmagents_project:
     # Override LANGSMITH_PROJECT for agent traces
     os.environ["LANGSMITH_PROJECT"] = _rlmagents_project
+else:
+    normalized_env_project = _normalize_langsmith_project_name(
+        _original_langsmith_project
+    )
+    if normalized_env_project:
+        os.environ["LANGSMITH_PROJECT"] = normalized_env_project
 
 # E402: Now safe to import LangChain modules
 from langchain.chat_models import init_chat_model  # noqa: E402
@@ -191,7 +217,7 @@ def _is_editable_install() -> bool:
     if _editable_cache is not None:
         return _editable_cache
 
-    for package_name in ("rlmagents-cli", "deepagents" + "-cli"):
+    for package_name in ("rlmagents-cli",):
         try:
             dist = distribution(package_name)
             direct_url = dist.read_text("direct_url.json")
@@ -337,10 +363,9 @@ def _find_project_root(start_path: Path | None = None) -> Path | None:
 def _find_project_agent_md(project_root: Path) -> list[Path]:
     """Find project-specific AGENTS.md file(s).
 
-    Checks two locations and returns ALL that exist:
+    Checks locations and returns ALL that exist:
     1. project_root/.rlmagents/AGENTS.md
-    2. project_root/.deepagents/AGENTS.md (compatibility)
-    3. project_root/AGENTS.md
+    2. project_root/AGENTS.md
 
     All files found are loaded and combined in that order.
 
@@ -356,11 +381,6 @@ def _find_project_agent_md(project_root: Path) -> list[Path]:
     rlmagents_md = project_root / ".rlmagents" / "AGENTS.md"
     if rlmagents_md.exists():
         paths.append(rlmagents_md)
-
-    # Check .deepagents/AGENTS.md (compatibility)
-    deepagents_md = project_root / ".deepagents" / "AGENTS.md"
-    if deepagents_md.exists():
-        paths.append(deepagents_md)
 
     # Check root AGENTS.md (fallback, but also include if both exist)
     root_md = project_root / "AGENTS.md"
@@ -427,7 +447,7 @@ class Settings:
         tavily_api_key: Tavily API key if available.
         google_cloud_project: Google Cloud project ID for VertexAI
             authentication.
-        deepagents_langchain_project: LangSmith project name for rlmagents
+        rlmagents_langsmith_project: LangSmith project name for rlmagents
             agent tracing.
         user_langchain_project: Original LANGSMITH_PROJECT from environment
             (for user code).
@@ -448,7 +468,7 @@ class Settings:
     google_cloud_project: str | None
 
     # LangSmith configuration
-    deepagents_langchain_project: str | None  # For deepagents agent tracing
+    rlmagents_langsmith_project: str | None  # For rlmagents agent tracing
     user_langchain_project: str | None  # Original LANGSMITH_PROJECT for user code
 
     # Model configuration
@@ -481,13 +501,12 @@ class Settings:
 
         # Detect LangSmith configuration
         # RLMAGENTS_LANGSMITH_PROJECT: Primary project for rlmagents tracing
-        # DEEPAGENTS_LANGSMITH_PROJECT: compatibility alias
         # user_langchain_project: User's ORIGINAL LANGSMITH_PROJECT (before override)
         # Note: LANGSMITH_PROJECT was already overridden at module import time (above)
         # so we use the saved original value, not the current os.environ value
-        deepagents_langchain_project = os.environ.get(
-            "RLMAGENTS_LANGSMITH_PROJECT"
-        ) or os.environ.get("DEEPAGENTS_LANGSMITH_PROJECT")
+        rlmagents_langsmith_project = _normalize_langsmith_project_name(
+            os.environ.get("RLMAGENTS_LANGSMITH_PROJECT")
+        )
         user_langchain_project = _original_langsmith_project  # Use saved original!
 
         # Detect project
@@ -496,9 +515,7 @@ class Settings:
         # Parse shell command allow-list from environment
         # Format: comma-separated list of commands (e.g., "ls,cat,grep,pwd")
         # Special value "recommended" uses RECOMMENDED_SAFE_SHELL_COMMANDS
-        shell_allow_list_str = os.environ.get(
-            "RLMAGENTS_SHELL_ALLOW_LIST"
-        ) or os.environ.get("DEEPAGENTS_SHELL_ALLOW_LIST")
+        shell_allow_list_str = os.environ.get("RLMAGENTS_SHELL_ALLOW_LIST")
         shell_allow_list = parse_shell_allow_list(shell_allow_list_str)
 
         return cls(
@@ -507,7 +524,7 @@ class Settings:
             google_api_key=google_key,
             tavily_api_key=tavily_key,
             google_cloud_project=google_cloud_project,
-            deepagents_langchain_project=deepagents_langchain_project,
+            rlmagents_langsmith_project=rlmagents_langsmith_project,
             user_langchain_project=user_langchain_project,
             project_root=project_root,
             shell_allow_list=shell_allow_list,
@@ -544,15 +561,6 @@ class Settings:
         return self.tavily_api_key is not None
 
     @property
-    def user_deepagents_dir(self) -> Path:
-        """Compatibility alias for the primary user-level agent directory.
-
-        Returns:
-            Path to `~/.rlmagents`.
-        """
-        return self.user_rlmagents_dir
-
-    @property
     def user_rlmagents_dir(self) -> Path:
         """Get the primary user-level agent directory.
 
@@ -560,15 +568,6 @@ class Settings:
             Path to `~/.rlmagents`.
         """
         return Path.home() / ".rlmagents"
-
-    @property
-    def user_legacy_deepagents_dir(self) -> Path:
-        """Get the legacy user-level agent directory.
-
-        Returns:
-            Path to legacy `.deepagents` under the user's home directory.
-        """
-        return Path.home() / ".deepagents"
 
     @staticmethod
     def get_user_agent_md_path(agent_name: str) -> Path:
@@ -584,67 +583,37 @@ class Settings:
         """
         return Path.home() / ".rlmagents" / agent_name / "AGENTS.md"
 
-    @staticmethod
-    def get_legacy_user_agent_md_path(agent_name: str) -> Path:
-        """Get legacy user-level AGENTS.md path for a specific agent.
-
-        Args:
-            agent_name: Name of the agent.
-
-        Returns:
-            Path to legacy `.deepagents/{agent_name}/AGENTS.md` under home.
-        """
-        return Path.home() / ".deepagents" / agent_name / "AGENTS.md"
-
     @classmethod
     def get_user_agent_md_paths(cls, agent_name: str) -> list[Path]:
-        """Get user AGENTS.md paths in precedence order.
+        """Get user AGENTS.md paths.
 
         Args:
             agent_name: Name of the agent.
 
         Returns:
-            List containing primary path first, plus legacy path when present.
+            List containing only the primary path.
         """
-        primary = cls.get_user_agent_md_path(agent_name)
-        legacy = cls.get_legacy_user_agent_md_path(agent_name)
-        paths = [primary]
-        if legacy.exists():
-            paths.append(legacy)
-        return paths
+        return [cls.get_user_agent_md_path(agent_name)]
 
     def get_project_agent_md_path(self) -> Path | None:
-        """Get project-level AGENTS.md path with compatibility fallback.
+        """Get project-level AGENTS.md path.
 
         Returns:
-            Preferred `project_root/.rlmagents/AGENTS.md` path.
-            Falls back to `project_root/.deepagents/AGENTS.md` when the primary
-            file is absent and legacy exists. Returns `None` when not in a project.
+            `project_root/.rlmagents/AGENTS.md`, or `None` when not in a project.
         """
         if not self.project_root:
             return None
-        primary = self.project_root / ".rlmagents" / "AGENTS.md"
-        legacy = self.project_root / ".deepagents" / "AGENTS.md"
-        if primary.exists():
-            return primary
-        if legacy.exists():
-            return legacy
-        return primary
+        return self.project_root / ".rlmagents" / "AGENTS.md"
 
     def get_project_agent_md_paths(self) -> list[Path]:
-        """Get project AGENTS.md paths in precedence order.
+        """Get project AGENTS.md paths.
 
         Returns:
-            Primary path first, plus legacy path when present.
+            List containing the primary path, or empty list outside a project.
         """
         if not self.project_root:
             return []
-        primary = self.project_root / ".rlmagents" / "AGENTS.md"
-        legacy = self.project_root / ".deepagents" / "AGENTS.md"
-        paths = [primary]
-        if legacy.exists():
-            paths.append(legacy)
-        return paths
+        return [self.project_root / ".rlmagents" / "AGENTS.md"]
 
     @staticmethod
     def _is_valid_agent_name(agent_name: str) -> bool:
@@ -677,26 +646,6 @@ class Settings:
             )
             raise ValueError(msg)
         return self.user_rlmagents_dir / agent_name
-
-    def get_legacy_agent_dir(self, agent_name: str) -> Path:
-        """Get the legacy global agent directory path.
-
-        Args:
-            agent_name: Name of the agent.
-
-        Returns:
-            Path to legacy `.deepagents/{agent_name}` under home.
-
-        Raises:
-            ValueError: If the agent name contains invalid characters.
-        """
-        if not self._is_valid_agent_name(agent_name):
-            msg = (
-                f"Invalid agent name: {agent_name!r}. Agent names can only "
-                "contain letters, numbers, hyphens, underscores, and spaces."
-            )
-            raise ValueError(msg)
-        return self.user_legacy_deepagents_dir / agent_name
 
     def ensure_agent_dir(self, agent_name: str) -> Path:
         """Ensure the global agent directory exists and return its path.
@@ -740,23 +689,21 @@ class Settings:
         Returns:
             Parsed settings dictionary, or empty dict on missing/invalid file.
         """
-        primary = self.get_agent_settings_path(agent_name)
-        legacy = self.get_legacy_agent_dir(agent_name) / "settings.toml"
-        for settings_path in (primary, legacy):
-            if not settings_path.exists():
-                continue
-            try:
-                with settings_path.open("rb") as f:
-                    data = tomllib.load(f)
-            except (OSError, tomllib.TOMLDecodeError):
-                logger.warning(
-                    "Failed to parse agent settings at %s",
-                    settings_path,
-                    exc_info=True,
-                )
-                continue
-            if isinstance(data, dict):
-                return data
+        settings_path = self.get_agent_settings_path(agent_name)
+        if not settings_path.exists():
+            return {}
+        try:
+            with settings_path.open("rb") as f:
+                data = tomllib.load(f)
+        except (OSError, tomllib.TOMLDecodeError):
+            logger.warning(
+                "Failed to parse agent settings at %s",
+                settings_path,
+                exc_info=True,
+            )
+            return {}
+        if isinstance(data, dict):
+            return data
         return {}
 
     def get_agent_harness(self, agent_name: str) -> str | None:
@@ -766,7 +713,7 @@ class Settings:
             agent_name: Name of the agent.
 
         Returns:
-            Harness name (`deepagents` or `rlmagents`) if valid, otherwise None.
+            Harness name (`rlmagents`) if valid, otherwise None.
         """
         harness = self.load_agent_settings(agent_name).get("harness")
         if isinstance(harness, str) and harness in _VALID_AGENT_HARNESSES:
@@ -778,7 +725,7 @@ class Settings:
 
         Args:
             agent_name: Name of the agent.
-            harness: Harness identifier (`deepagents` or `rlmagents`).
+            harness: Harness identifier (`rlmagents`).
 
         Returns:
             True if saved successfully, False if write fails.
@@ -787,10 +734,7 @@ class Settings:
             ValueError: If the harness value is unsupported.
         """
         if harness not in _VALID_AGENT_HARNESSES:
-            msg = (
-                f"Invalid harness: {harness!r}. Supported values are "
-                "'deepagents' and 'rlmagents'."
-            )
+            msg = f"Invalid harness: {harness!r}. Supported values are 'rlmagents'."
             raise ValueError(msg)
 
         settings_data = self.load_agent_settings(agent_name)
@@ -821,32 +765,16 @@ class Settings:
         """
         return self.get_agent_dir(agent_name) / "skills"
 
-    def get_legacy_user_skills_dir(self, agent_name: str) -> Path:
-        """Get legacy user-level skills directory path for a specific agent.
-
-        Args:
-            agent_name: Name of the agent.
-
-        Returns:
-            Path to legacy `.deepagents/{agent_name}/skills/` under home.
-        """
-        return self.get_legacy_agent_dir(agent_name) / "skills"
-
     def get_user_skills_dirs(self, agent_name: str) -> list[Path]:
-        """Get user skills directories in precedence order.
+        """Get user skills directories.
 
         Args:
             agent_name: Name of the agent.
 
         Returns:
-            List containing primary path first, plus legacy path when present.
+            List containing the primary path.
         """
-        primary = self.get_user_skills_dir(agent_name)
-        legacy = self.get_legacy_user_skills_dir(agent_name)
-        paths = [primary]
-        if legacy.exists():
-            paths.append(legacy)
-        return paths
+        return [self.get_user_skills_dir(agent_name)]
 
     def ensure_user_skills_dir(self, agent_name: str) -> Path:
         """Ensure user-level skills directory exists and return its path.
@@ -871,30 +799,16 @@ class Settings:
             return None
         return self.project_root / ".rlmagents" / "skills"
 
-    def get_legacy_project_skills_dir(self) -> Path | None:
-        """Get legacy project-level skills directory path.
-
-        Returns:
-            Path to `{project_root}/.deepagents/skills/`, or `None` if not in a project.
-        """
-        if not self.project_root:
-            return None
-        return self.project_root / ".deepagents" / "skills"
-
     def get_project_skills_dirs(self) -> list[Path]:
-        """Get project skills directories in precedence order.
+        """Get project skills directories.
 
         Returns:
-            List containing primary path first, plus legacy path when present.
+            List containing the primary path, or empty list outside a project.
         """
         primary = self.get_project_skills_dir()
-        legacy = self.get_legacy_project_skills_dir()
         if primary is None:
             return []
-        paths = [primary]
-        if legacy and legacy.exists():
-            paths.append(legacy)
-        return paths
+        return [primary]
 
     def ensure_project_skills_dir(self) -> Path | None:
         """Ensure project-level skills directory exists and return its path.
@@ -921,17 +835,6 @@ class Settings:
         """
         return self.get_agent_dir(agent_name) / "agents"
 
-    def get_legacy_user_agents_dir(self, agent_name: str) -> Path:
-        """Get legacy user-level agents directory path for custom subagent definitions.
-
-        Args:
-            agent_name: Name of the CLI agent.
-
-        Returns:
-            Path to legacy `.deepagents/{agent_name}/agents/` under home.
-        """
-        return self.get_legacy_agent_dir(agent_name) / "agents"
-
     def get_project_agents_dir(self) -> Path | None:
         """Get project-level agents directory path for custom subagent definitions.
 
@@ -942,61 +845,41 @@ class Settings:
             return None
         return self.project_root / ".rlmagents" / "agents"
 
-    def get_legacy_project_agents_dir(self) -> Path | None:
-        """Get legacy project agents directory path for custom subagent definitions.
-
-        Returns:
-            Path to `{project_root}/.deepagents/agents/`, or `None` if not in a project.
-        """
-        if not self.project_root:
-            return None
-        return self.project_root / ".deepagents" / "agents"
-
     def get_user_agents_dirs(self, agent_name: str) -> list[Path]:
-        """Get user agent-definition directories in precedence order.
+        """Get user agent-definition directories.
 
         Args:
             agent_name: Name of the CLI agent.
 
         Returns:
-            List containing primary path first, plus legacy path when present.
+            List containing the primary path.
         """
-        primary = self.get_user_agents_dir(agent_name)
-        legacy = self.get_legacy_user_agents_dir(agent_name)
-        paths = [primary]
-        if legacy.exists():
-            paths.append(legacy)
-        return paths
+        return [self.get_user_agents_dir(agent_name)]
 
     def get_project_agents_dirs(self) -> list[Path]:
-        """Get project agent-definition directories in precedence order.
+        """Get project agent-definition directories.
 
         Returns:
-            List containing primary path first, plus legacy path when present.
+            List containing the primary path, or empty list outside a project.
         """
         primary = self.get_project_agents_dir()
-        legacy = self.get_legacy_project_agents_dir()
         if primary is None:
             return []
-        paths = [primary]
-        if legacy and legacy.exists():
-            paths.append(legacy)
-        return paths
+        return [primary]
 
     def list_agent_dirs(self) -> dict[str, Path]:
-        """List user agent directories from primary and legacy locations.
+        """List user agent directories from the primary location.
 
         Returns:
-            Mapping of agent name to resolved directory path. Primary entries
-            override legacy entries with the same name.
+            Mapping of agent name to resolved directory path.
         """
         discovered: dict[str, Path] = {}
-        for base in (self.user_legacy_deepagents_dir, self.user_rlmagents_dir):
-            if not base.exists():
-                continue
-            for path in sorted(base.iterdir()):
-                if path.is_dir():
-                    discovered[path.name] = path
+        base = self.user_rlmagents_dir
+        if not base.exists():
+            return discovered
+        for path in sorted(base.iterdir()):
+            if path.is_dir():
+                discovered[path.name] = path
         return discovered
 
     @property
@@ -1259,9 +1142,8 @@ def get_langsmith_project_name() -> str | None:
 
     Checks for the required API key and tracing environment variables.
     When both are present, resolves the project name with priority:
-    `settings.deepagents_langchain_project` (from
-    `RLMAGENTS_LANGSMITH_PROJECT` or the compatibility alias
-    `DEEPAGENTS_LANGSMITH_PROJECT`), then `LANGSMITH_PROJECT` from the
+    `settings.rlmagents_langsmith_project` (from
+    `RLMAGENTS_LANGSMITH_PROJECT`), then `LANGSMITH_PROJECT` from the
     environment (note: this may already have been overridden at import
     time to match the rlmagents project var), then `'default'`.
 
@@ -1278,8 +1160,8 @@ def get_langsmith_project_name() -> str | None:
         return None
 
     return (
-        settings.deepagents_langchain_project
-        or os.environ.get("LANGSMITH_PROJECT")
+        _normalize_langsmith_project_name(settings.rlmagents_langsmith_project)
+        or _normalize_langsmith_project_name(os.environ.get("LANGSMITH_PROJECT"))
         or "default"
     )
 
@@ -1294,8 +1176,8 @@ def fetch_langsmith_project_url(project_name: str) -> str | None:
     contexts, run it in a thread (e.g. via `asyncio.to_thread`).
 
     Returns None (with a debug log) on any expected failure: missing
-    `langsmith` package, network errors, invalid project names, or client
-    initialization issues.
+    `langsmith` package, network/auth issues, unknown project names, invalid
+    project names, or client initialization issues.
 
     Args:
         project_name: LangSmith project name to look up.
@@ -1313,9 +1195,19 @@ def fetch_langsmith_project_url(project_name: str) -> str | None:
 
     try:
         from langsmith import Client
+        from langsmith.utils import LangSmithError
+    except ImportError:
+        logger.debug(
+            "Could not fetch LangSmith project URL for '%s'",
+            project_name,
+            exc_info=True,
+        )
+        _langsmith_url_cache = (project_name, None)
+        return None
 
+    try:
         project = Client().read_project(project_name=project_name)
-    except (ImportError, OSError, ValueError, RuntimeError):
+    except (LangSmithError, OSError, ValueError, RuntimeError):
         logger.debug(
             "Could not fetch LangSmith project URL for '%s'",
             project_name,
@@ -1662,6 +1554,7 @@ def _create_model_via_init(
     except ImportError as e:
         package_map = {
             "anthropic": "langchain-anthropic",
+            "deepseek": "langchain-deepseek",
             "openai": "langchain-openai",
             "google_genai": "langchain-google-genai",
             "google_vertexai": "langchain-google-vertexai",

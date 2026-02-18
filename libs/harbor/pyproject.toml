@@ -26,7 +26,7 @@ dependencies = [
     # LangSmith for observability
     "langsmith>=0.4.0",
     "modal>=0.64.0",
-    "deepagents-cli",
+    "rlmagents-cli",
 ]
 
 [dependency-groups]
@@ -67,7 +67,7 @@ override-dependencies = [
 ]
 
 [tool.uv.sources]
-deepagents-cli = { path = "../cli" }
+rlmagents-cli = { path = "../cli" }
 deepagents = { path = "../deepagents", editable = true }
 
 [tool.ty.environment]

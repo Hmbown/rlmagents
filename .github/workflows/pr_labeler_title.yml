@@ -18,7 +18,7 @@ jobs:
       contents: read
       pull-requests: write
       issues: write
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux]
 
     steps:
       - name: Label PR based on title
@@ -56,7 +56,7 @@ jobs:
             const scopeToLabel = {
               "deepagents": "deepagents",
               "sdk": "deepagents",
-              "deepagents-cli": "cli",
+              "rlmagents-cli": "cli",
               "cli": "cli",
               "harbor": "harbor",
               "acp": "acp",

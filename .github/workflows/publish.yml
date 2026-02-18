@@ -19,11 +19,18 @@ permissions:
 
 jobs:
   publish-cli:
-    # Only run for CLI releases (tag format: deepagents-cli==X.Y.Z)
-    if: startsWith(github.event.release.tag_name, 'deepagents-cli==')
-    runs-on: ubuntu-latest
+    # Only run for CLI releases (tag format: rlmagents-cli==X.Y.Z)
+    if: startsWith(github.event.release.tag_name, 'rlmagents-cli==')
+    runs-on: [self-hosted, Linux]
 
     steps:
+      - name: Verify runner prerequisites
+        shell: bash
+        run: |
+          set -eu
+          gh --version
+          docker version
+
       - name: Download release assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

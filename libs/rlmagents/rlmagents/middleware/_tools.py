@@ -470,8 +470,13 @@ def _create_semantic_search_tool(manager: RLMSessionManager) -> BaseTool:
         lines = []
         for i, r in enumerate(results, 1):
             score = r.get("score", 0)
-            text = r.get("text", r.get("chunk", ""))[:500]
-            lines.append(f"[{i}] score={score:.3f}\n{text}")
+            text = str(r.get("text") or r.get("chunk") or r.get("preview") or "")[:500]
+            start_char = r.get("start_char")
+            end_char = r.get("end_char")
+            span = ""
+            if isinstance(start_char, int) and isinstance(end_char, int):
+                span = f", chars={start_char}-{end_char}"
+            lines.append(f"[{i}] score={score:.3f}{span}\n{text}")
 
         snippet = "\n".join(lines)[:300]
         _record_evidence(

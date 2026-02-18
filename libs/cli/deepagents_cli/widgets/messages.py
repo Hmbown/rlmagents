@@ -62,6 +62,7 @@ _TOOLS_WITH_HEADER_INFO: set[str] = {
     "shell",  # local shell
     # Web tools
     "web_search",
+    "web_research",
     "fetch_url",
     "http_request",
     # Agent tools
@@ -635,6 +636,7 @@ class ToolCallMessage(Vertical):
             "bash": self._format_shell_output,
             "execute": self._format_shell_output,
             "web_search": self._format_web_output,
+            "web_research": self._format_web_output,
             "fetch_url": self._format_web_output,
             "http_request": self._format_web_output,
             "task": self._format_task_output,

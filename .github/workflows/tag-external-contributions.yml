@@ -24,7 +24,8 @@ on:
 
 jobs:
   tag-external:
-    runs-on: ubuntu-latest
+    if: ${{ secrets.ORG_MEMBERSHIP_APP_ID != '' && secrets.ORG_MEMBERSHIP_APP_PRIVATE_KEY != '' }}
+    runs-on: [self-hosted, Linux]
     permissions:
       issues: write
       pull-requests: write

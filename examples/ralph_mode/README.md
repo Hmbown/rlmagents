@@ -1,4 +1,4 @@
-# Ralph Mode for Deep Agents
+# Ralph Mode for RLMAgents CLI
 
 ![Ralph Mode Diagram](ralph_mode_diagram.png)
 
@@ -25,7 +25,7 @@ uv venv
 source .venv/bin/activate
 
 # Install the CLI
-uv pip install deepagents-cli
+uv pip install rlmagents-cli
 
 # Download the script (or copy from examples/ralph_mode/ if you have the repo)
 curl -O https://raw.githubusercontent.com/langchain-ai/deepagents/main/examples/ralph_mode/ralph_mode.py

@@ -84,6 +84,30 @@ class TestSearchContextTool:
         assert "No matches" in result
 
 
+class TestSemanticSearchTool:
+    def _get_tool(self, mgr):
+        tools = _build_rlm_tools(mgr)
+        return next(t for t in tools if t.name == "semantic_search")
+
+    def test_semantic_search_returns_chunk_preview(self):
+        mgr = RLMSessionManager()
+        mgr.create_session(
+            "alpha beta gamma\nnetwork timeout happened during upload",
+            context_id="sem",
+        )
+        tool = self._get_tool(mgr)
+        result = tool.invoke(
+            {
+                "query": "network timeout",
+                "context_id": "sem",
+                "chunk_size": 500,
+                "top_k": 1,
+            }
+        )
+        assert "score=" in result
+        assert "network timeout" in result.lower()
+
+
 class TestExecPythonTool:
     def _get_tool(self, mgr):
         tools = _build_rlm_tools(mgr)

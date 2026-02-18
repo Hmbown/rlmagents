@@ -113,7 +113,7 @@ The release workflow (`.github/workflows/release.yml`) runs when a release PR is
 5. **Pre-release Checks** - Runs tests against the built package
 6. **Mark Release** - Creates a **draft** GitHub release with the built artifacts
 
-When you publish the draft release, `.github/workflows/release-publish.yml` triggers and publishes to PyPI.
+When you publish the draft release, `.github/workflows/publish.yml` triggers and publishes to PyPI.
 
 ### Release PR Labels
 
@@ -172,7 +172,7 @@ This is a **GitHub UI quirk** caused by force pushes/rebasing, not actual commit
 
 **The actual PR commits** are only:
 
-- The release commit (e.g., `release(deepagents-cli): 0.0.18`)
+- The release commit (e.g., `release(rlmagents-cli): 0.0.18`)
 - The lockfile update commit (e.g., `chore: update lockfiles`)
 
 Other commits shown are just the base that the PR branch was rebased onto. This is normal behavior and doesn't indicate unauthorized access.
@@ -185,7 +185,7 @@ If a release PR shows `autorelease: pending` after the release workflow complete
 
 ```bash
 # Find the PR number for the release commit
-gh pr list --state merged --search "release(deepagents-cli)" --limit 5
+gh pr list --state merged --search "release(rlmagents-cli)" --limit 5
 
 # Update the label
 gh pr edit <PR_NUMBER> --remove-label "autorelease: pending" --add-label "autorelease: tagged"
@@ -205,11 +205,11 @@ Using the PyPI web interface or a CLI tool.
 
 ```bash
 # Delete the GitHub release
-gh release delete "deepagents-cli==<VERSION>" --yes
+gh release delete "rlmagents-cli==<VERSION>" --yes
 
 # Delete the git tag
-git tag -d "deepagents-cli==<VERSION>"
-git push origin --delete "deepagents-cli==<VERSION>"
+git tag -d "rlmagents-cli==<VERSION>"
+git push origin --delete "rlmagents-cli==<VERSION>"
 ```
 
 #### 3. Fix the Manifest
@@ -249,7 +249,7 @@ This means a release PR was merged but its merge commit doesn't have the expecte
 
 ```bash
 # Find what commit the tag points to
-git ls-remote --tags origin | grep "deepagents-cli==<VERSION>"
+git ls-remote --tags origin | grep "rlmagents-cli==<VERSION>"
 
 # Find the release PR's merge commit
 gh pr view <PR_NUMBER> --json mergeCommit --jq '.mergeCommit.oid'
@@ -261,20 +261,20 @@ If these differ, release-please is confused.
 
 ```bash
 # 1. Delete the remote tag
-git push origin :refs/tags/deepagents-cli==<VERSION>
+git push origin :refs/tags/rlmagents-cli==<VERSION>
 
 # 2. Delete local tag if it exists
-git tag -d deepagents-cli==<VERSION> 2>/dev/null || true
+git tag -d rlmagents-cli==<VERSION> 2>/dev/null || true
 
 # 3. Create tag on the correct commit (the release PR's merge commit)
-git tag deepagents-cli==<VERSION> <MERGE_COMMIT_SHA>
+git tag rlmagents-cli==<VERSION> <MERGE_COMMIT_SHA>
 
 # 4. Push the new tag
-git push origin deepagents-cli==<VERSION>
+git push origin rlmagents-cli==<VERSION>
 
 # 5. Update the GitHub release's target_commitish to match
 #    (moving a tag doesn't update this field automatically)
-gh api -X PATCH repos/langchain-ai/deepagents/releases/$(gh api repos/langchain-ai/deepagents/releases --jq '.[] | select(.tag_name == "deepagents-cli==<VERSION>") | .id') \
+gh api -X PATCH repos/<owner>/<repo>/releases/$(gh api repos/<owner>/<repo>/releases --jq '.[] | select(.tag_name == "rlmagents-cli==<VERSION>") | .id') \
   -f target_commitish=<MERGE_COMMIT_SHA>
 ```
 

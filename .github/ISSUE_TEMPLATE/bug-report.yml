@@ -105,7 +105,7 @@ body:
         OS:
         Python: 3.x.x
         deepagents: 0.x.y
-        deepagents-cli: 0.x.y
+        rlmagents-cli: 0.x.y
   - type: markdown
     attributes:
       value: |

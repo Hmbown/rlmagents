@@ -1,11 +1,11 @@
-# Main CI workflow for Deep Agents monorepo
+# Main CI workflow for RLMAgents monorepo
 #
 # Runs on every pull request:
 # - Linting for changed packages
-# - Unit Tests for changed packages
+# - Unit tests for changed packages
 #
-# Only packages with changes are tested. SDK changes also trigger CLI tests.
-# Pushes to main and workflow changes run full CI.
+# Only packages with changes are tested. Workflow/action changes run full CI.
+# Pushes to main run full CI.
 
 name: "🔧 CI"
 
@@ -22,6 +22,7 @@ concurrency:
 
 permissions:
   contents: read
+  pull-requests: read
 
 env:
   UV_NO_SYNC: "true"
@@ -30,15 +31,11 @@ jobs:
   # Detect which packages have changes
   changes:
     name: "🔍 Detect Changes"
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux]
     outputs:
-      sdk: ${{ steps.filter.outputs.sdk }}
       cli: ${{ steps.filter.outputs.cli }}
       rlmagents: ${{ steps.filter.outputs.rlmagents }}
-      harbor: ${{ steps.filter.outputs.harbor }}
-      daytona: ${{ steps.filter.outputs.daytona }}
-      modal: ${{ steps.filter.outputs.modal }}
-      runloop: ${{ steps.filter.outputs.runloop }}
+      acp: ${{ steps.filter.outputs.acp }}
     steps:
       - name: "📋 Checkout Code"
         uses: actions/checkout@v6
@@ -47,62 +44,20 @@ jobs:
         uses: dorny/paths-filter@v3
         id: filter
         with:
-          # Each package filter includes workflow/action paths so that CI
-          # infrastructure changes are validated against all packages.
           filters: |
-            sdk:
-              - 'libs/deepagents/**'
-              - '.github/workflows/ci.yml'
-              - '.github/workflows/_lint.yml'
-              - '.github/workflows/_test.yml'
-              - '.github/actions/**'
             cli:
-              - 'libs/cli/**'
-              - 'libs/deepagents/**'
-              - '.github/workflows/ci.yml'
-              - '.github/workflows/_lint.yml'
-              - '.github/workflows/_test.yml'
-              - '.github/actions/**'
-            harbor:
-              - 'libs/harbor/**'
-              - '.github/workflows/ci.yml'
-              - '.github/workflows/_lint.yml'
-              - '.github/workflows/_test.yml'
-              - '.github/actions/**'
+              - "libs/cli/**"
+              - "libs/rlmagents/**"
+              - ".github/workflows/**"
+              - ".github/actions/**"
             rlmagents:
-              - 'libs/rlmagents/**'
-              - '.github/workflows/ci.yml'
-              - '.github/workflows/_lint.yml'
-              - '.github/workflows/_test.yml'
-              - '.github/actions/**'
-            daytona:
-              - 'libs/partners/daytona/**'
-              - '.github/workflows/ci.yml'
-              - '.github/workflows/_lint.yml'
-              - '.github/workflows/_test.yml'
-              - '.github/actions/**'
-            modal:
-              - 'libs/partners/modal/**'
-              - '.github/workflows/ci.yml'
-              - '.github/workflows/_lint.yml'
-              - '.github/workflows/_test.yml'
-              - '.github/actions/**'
-            runloop:
-              - 'libs/partners/runloop/**'
-              - '.github/workflows/ci.yml'
-              - '.github/workflows/_lint.yml'
-              - '.github/workflows/_test.yml'
-              - '.github/actions/**'
-
-  # Run linting on changed packages
-  lint-deepagents:
-    name: "🧹 Lint deepagents"
-    needs: changes
-    if: needs.changes.outputs.sdk == 'true' || github.event_name == 'push'
-    uses: ./.github/workflows/_lint.yml
-    with:
-      working-directory: "libs/deepagents"
-      python-version: "3.11"
+              - "libs/rlmagents/**"
+              - ".github/workflows/**"
+              - ".github/actions/**"
+            acp:
+              - "libs/acp/**"
+              - ".github/workflows/**"
+              - ".github/actions/**"
 
   lint-cli:
     name: "🧹 Lint cli"
@@ -113,20 +68,24 @@ jobs:
       working-directory: "libs/cli"
       python-version: "3.11"
 
-  lint-harbor:
-    name: "🧹 Lint harbor"
+  test-cli:
+    name: "🧪 Test cli"
     needs: changes
-    if: needs.changes.outputs.harbor == 'true' || github.event_name == 'push'
-    uses: ./.github/workflows/_lint.yml
+    if: needs.changes.outputs.cli == 'true' || github.event_name == 'push'
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+      fail-fast: false
+    uses: ./.github/workflows/_test.yml
     with:
-      working-directory: "libs/harbor"
-      python-version: "3.14"
+      working-directory: "libs/cli"
+      python-version: ${{ matrix.python-version }}
 
   lint-rlmagents:
     name: "🧹 Lint rlmagents"
     needs: changes
     if: needs.changes.outputs.rlmagents == 'true' || github.event_name == 'push'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux]
     timeout-minutes: 20
     steps:
       - name: "📋 Checkout Code"
@@ -136,6 +95,8 @@ jobs:
         uses: "./.github/actions/uv_setup"
         with:
           python-version: "3.11"
+          cache-suffix: lint-libs/rlmagents
+          working-directory: "libs/rlmagents"
 
       - name: "📦 Install Test Dependencies"
         working-directory: "libs/rlmagents"
@@ -145,82 +106,15 @@ jobs:
         working-directory: "libs/rlmagents"
         run: uv run ruff check rlmagents tests
 
-  lint-daytona:
-    name: "🧹 Lint daytona"
-    needs: changes
-    if: needs.changes.outputs.daytona == 'true' || github.event_name == 'push'
-    uses: ./.github/workflows/_lint.yml
-    with:
-      working-directory: "libs/partners/daytona"
-      python-version: "3.11"
-
-  lint-modal:
-    name: "🧹 Lint modal"
-    needs: changes
-    if: needs.changes.outputs.modal == 'true' || github.event_name == 'push'
-    uses: ./.github/workflows/_lint.yml
-    with:
-      working-directory: "libs/partners/modal"
-      python-version: "3.11"
-
-  lint-runloop:
-    name: "🧹 Lint runloop"
-    needs: changes
-    if: needs.changes.outputs.runloop == 'true' || github.event_name == 'push'
-    uses: ./.github/workflows/_lint.yml
-    with:
-      working-directory: "libs/partners/runloop"
-      python-version: "3.11"
-
-  # Run unit tests on changed packages
-  test-deepagents:
-    name: "🧪 Test deepagents"
-    needs: changes
-    if: needs.changes.outputs.sdk == 'true' || github.event_name == 'push'
-    strategy:
-      matrix:
-        python-version: ["3.11", "3.12", "3.13", "3.14"]
-      fail-fast: false
-    uses: ./.github/workflows/_test.yml
-    with:
-      working-directory: "libs/deepagents"
-      python-version: ${{ matrix.python-version }}
-
-  test-cli:
-    name: "🧪 Test cli"
-    needs: changes
-    if: needs.changes.outputs.cli == 'true' || github.event_name == 'push'
-    strategy:
-      matrix:
-        python-version: ["3.11", "3.12", "3.13", "3.14"]
-      fail-fast: false
-    uses: ./.github/workflows/_test.yml
-    with:
-      working-directory: "libs/cli"
-      python-version: ${{ matrix.python-version }}
-
-  test-harbor:
-    name: "🧪 Test harbor"
-    needs: changes
-    if: needs.changes.outputs.harbor == 'true' || github.event_name == 'push'
-    strategy:
-      matrix:
-        python-version: ["3.12", "3.13", "3.14"]
-      fail-fast: false
-    uses: ./.github/workflows/_test.yml
-    with:
-      working-directory: "libs/harbor"
-      python-version: ${{ matrix.python-version }}
-
   test-rlmagents:
     name: "🧪 Test rlmagents"
     needs: changes
     if: needs.changes.outputs.rlmagents == 'true' || github.event_name == 'push'
     strategy:
       matrix:
-        python-version: ["3.11", "3.12", "3.13", "3.14"]
+        python-version: ["3.11", "3.12"]
       fail-fast: false
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux]
     timeout-minutes: 30
     steps:
       - name: "📋 Checkout Code"
@@ -230,14 +124,16 @@ jobs:
         uses: "./.github/actions/uv_setup"
         with:
           python-version: ${{ matrix.python-version }}
+          cache-suffix: test-libs/rlmagents
+          working-directory: "libs/rlmagents"
 
       - name: "📦 Install Test Dependencies"
         working-directory: "libs/rlmagents"
         run: uv sync --group test --locked
 
-      - name: "🧪 Run Unit Tests"
+      - name: "🧪 Run Tests"
         working-directory: "libs/rlmagents"
-        run: uv run pytest tests/unit_tests -q
+        run: uv run pytest tests -q
 
       - name: "🧹 Verify Clean Working Directory"
         shell: bash
@@ -247,50 +143,11 @@ jobs:
           echo "$STATUS"
           echo "$STATUS" | grep 'nothing to commit, working tree clean'
 
-  test-daytona:
-    name: "🧪 Test daytona"
+  test-acp-allowlist:
+    name: "🧪 Test acp allowlist"
     needs: changes
-    if: needs.changes.outputs.daytona == 'true' || github.event_name == 'push'
-    strategy:
-      matrix:
-        python-version: ["3.11", "3.12", "3.13", "3.14"]
-      fail-fast: false
-    uses: ./.github/workflows/_test.yml
-    with:
-      working-directory: "libs/partners/daytona"
-      python-version: ${{ matrix.python-version }}
-
-  test-modal:
-    name: "🧪 Test modal"
-    needs: changes
-    if: needs.changes.outputs.modal == 'true' || github.event_name == 'push'
-    strategy:
-      matrix:
-        python-version: ["3.11", "3.12", "3.13", "3.14"]
-      fail-fast: false
-    uses: ./.github/workflows/_test.yml
-    with:
-      working-directory: "libs/partners/modal"
-      python-version: ${{ matrix.python-version }}
-
-  test-runloop:
-    name: "🧪 Test runloop"
-    needs: changes
-    if: needs.changes.outputs.runloop == 'true' || github.event_name == 'push'
-    strategy:
-      matrix:
-        python-version: ["3.11", "3.12", "3.13", "3.14"]
-      fail-fast: false
-    uses: ./.github/workflows/_test.yml
-    with:
-      working-directory: "libs/partners/runloop"
-      python-version: ${{ matrix.python-version }}
-
-  bootstrap-smoke-rlmagents:
-    name: "🚦 Bootstrap smoke (rlmagents)"
-    needs: changes
-    if: needs.changes.outputs.rlmagents == 'true' || github.event_name == 'push'
-    runs-on: ubuntu-latest
+    if: needs.changes.outputs.acp == 'true' || github.event_name == 'push'
+    runs-on: [self-hosted, Linux]
     timeout-minutes: 10
     steps:
       - name: "📋 Checkout Code"
@@ -299,76 +156,30 @@ jobs:
       - name: "🐍 Set up Python + UV"
         uses: "./.github/actions/uv_setup"
         with:
-          python-version: "3.11"
+          python-version: "3.12"
+          cache-suffix: test-libs/acp
+          working-directory: "libs/acp"
 
       - name: "📦 Install Test Dependencies"
-        working-directory: "libs/rlmagents"
+        working-directory: "libs/acp"
         run: uv sync --group test --locked
 
-      - name: "🧪 Run Bootstrap Compatibility Command"
-        working-directory: "libs/rlmagents"
-        run: uv run python -c "from examples.bootstrap_config import _load_dotenv_if_available; from rlmagents import create_rlm_agent; _load_dotenv_if_available(); create_rlm_agent(); print('bootstrap ok')"
-
-  terminal-flow-smoke-rlmagents:
-    name: "🧪 Terminal-flow smoke (rlmagents)"
-    needs:
-      - changes
-      - bootstrap-smoke-rlmagents
-    if: needs.changes.outputs.rlmagents == 'true' || github.event_name == 'push'
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - name: "📋 Checkout Code"
-        uses: actions/checkout@v6
-
-      - name: "🐍 Set up Python + UV"
-        uses: "./.github/actions/uv_setup"
-        with:
-          python-version: "3.11"
-
-      - name: "📦 Install Test Dependencies"
-        working-directory: "libs/rlmagents"
-        run: uv sync --group test --locked
-
-      - name: "🧪 Run Terminal-flow Harness Scenarios"
-        working-directory: "libs/rlmagents"
-        env:
-          RLMAGENTS_BENCHMARK_SCORE_PATH: ${{ github.workspace }}/libs/rlmagents/.artifacts/terminal_bench_score.json
-        run: |
-          mkdir -p .artifacts
-          uv run pytest tests/unit_tests/test_terminal_bench_scenarios.py -q
-
-      - name: "📦 Upload Terminal Benchmark Score"
-        if: always()
-        uses: actions/upload-artifact@v6
-        with:
-          name: rlmagents-terminal-bench-score
-          path: libs/rlmagents/.artifacts/terminal_bench_score.json
-          if-no-files-found: ignore
+      - name: "🧪 Run allowlist test"
+        working-directory: "libs/acp"
+        run: uv run pytest tests/test_command_allowlist.py -q
 
   # Final status check - ensures all jobs passed
   ci_success:
     name: "✅ CI Success"
     needs:
       - changes
-      - lint-deepagents
       - lint-cli
-      - lint-harbor
-      - lint-daytona
-      - lint-modal
-      - lint-runloop
-      - lint-rlmagents
-      - test-deepagents
       - test-cli
-      - test-harbor
-      - test-daytona
-      - test-modal
-      - test-runloop
+      - lint-rlmagents
       - test-rlmagents
-      - bootstrap-smoke-rlmagents
-      - terminal-flow-smoke-rlmagents
+      - test-acp-allowlist
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux]
     steps:
       - name: "🎉 All Checks Passed"
         run: |

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "rlmagents"
-version = "0.1.0"
+version = "0.0.1"
 description = "RLM-enhanced agent harness: planning, filesystem, sub-agents, plus 23 tools for context isolation and evidence-backed reasoning"
 readme = "README.md"
 requires-python = ">=3.11,<4.0"
@@ -47,6 +47,12 @@ Repository = "https://github.com/Hmbown/rlmagents"
 
 [tool.uv]
 package = true
+
+[tool.hatch.build.targets.sdist]
+exclude = [
+    "BOOTSTRAP_PROMPT.md",
+    "phase2prompt.md",
+]
 
 [tool.ruff]
 line-length = 220

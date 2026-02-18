@@ -9,6 +9,21 @@ from rlmagents.middleware.rlm import _RLM_TOOL_NAMES, RLMMiddleware
 from rlmagents.session_manager import RLMSessionManager
 from rlmagents.types import Evidence
 
+_BASE_TOOL_NAMES = frozenset(
+    {
+        "write_todos",
+        "read_todos",
+        "ls",
+        "read_file",
+        "write_file",
+        "edit_file",
+        "glob",
+        "grep",
+        "execute",
+        "task",
+    }
+)
+
 
 class TestRLMMiddleware:
     def test_init(self):
@@ -31,10 +46,18 @@ class TestRLMMiddleware:
         names = {t.name for t in mw.tools}
         assert names == _RLM_TOOL_NAMES
 
+    def test_tool_names_unique(self):
+        mw = RLMMiddleware()
+        names = [t.name for t in mw.tools]
+        assert len(names) == len(set(names))
+
     def test_tool_count_23(self):
         mw = RLMMiddleware()
         assert len(_RLM_TOOL_NAMES) == 23
         assert len(mw.tools) == 23
+
+    def test_tool_names_do_not_collide_with_base_tools(self):
+        assert _RLM_TOOL_NAMES.isdisjoint(_BASE_TOOL_NAMES)
 
     def test_custom_prompt(self):
         mw = RLMMiddleware(system_prompt="Custom RLM prompt")
@@ -162,6 +185,28 @@ class TestREPLExecution:
         assert search_fn is not None
         results = search_fn("foo")
         assert len(results) == 2
+
+    def test_extract_pattern_helper_alias(self):
+        sm = RLMSessionManager()
+        sm.create_session("id=42\nid=99", context_id="extract")
+        session = sm.get_session("extract")
+        assert session is not None
+
+        result = session.repl.execute("print(len(extract_pattern(r'\\d+')))")
+        assert result.error is None
+        assert result.stdout.strip() == "2"
+
+    def test_get_evidence_helper_available_in_exec(self):
+        sm = RLMSessionManager()
+        sm.create_session("evidence context", context_id="evh")
+        session = sm.get_session("evh")
+        assert session is not None
+
+        result = session.repl.execute(
+            "cite('observed value', (1, 1), 'manual note')\nprint(len(get_evidence()))"
+        )
+        assert result.error is None
+        assert result.stdout.strip() == "1"
 
     def test_peek_helper(self):
         sm = RLMSessionManager()

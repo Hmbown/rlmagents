@@ -1,8 +1,30 @@
 # RLMAgents
 
-`rlmagents` is a batteries-included agent harness for coding and research workflows.
-It provides planning, filesystem operations, shell execution, subagents, and context
-management on top of LangChain + LangGraph.
+RLMAgents is an **RLM-enhanced** agent harness for coding and research workflows built on
+LangChain + LangGraph.
+
+It extends LangChain's **Deep Agents** project with a **Recursive Language Model (RLM)**
+architecture: isolated context sessions, evidence tracking, recursive sub-queries, a
+sandboxed Python analysis REPL, and recipe-style pipelines.
+
+Upstream project: https://github.com/langchain-ai/deepagents
+
+## RLM architecture (in practice)
+
+- **Context isolation**: load large artifacts into named sessions and query them without
+  polluting the main conversation.
+- **Evidence tracking**: keep provenance for findings and generate cited answers.
+- **Recursive sub-queries**: delegate retrieval/analysis to a secondary model with timeouts
+  and budgets.
+- **Sandboxed Python REPL**: run analysis over loaded contexts and produce structured outputs.
+- **Recipes**: declarative multi-step pipelines for repeatable research and coding tasks.
+
+## What RLMAgents adds (vs Deep Agents)
+
+- First-class RLM toolchain (contexts, evidence, sub-queries, recipes)
+- Session serialization (“memory packs”) for resumable work
+- `rlmagents-cli`: terminal UI for threads, approvals, skills, and memory
+- Opinionated smoke scenarios for harness behavior
 
 ## Monorepo Packages
 

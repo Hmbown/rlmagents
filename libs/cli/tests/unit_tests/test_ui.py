@@ -124,6 +124,12 @@ class TestFormatToolDisplayOther:
         result = format_tool_display("web_search", {"query": "how to code"})
         assert result == f'{prefix} web_search("how to code")'
 
+    def test_web_research(self) -> None:
+        """Test web_research display shows query."""
+        prefix = get_glyphs().tool_prefix
+        result = format_tool_display("web_research", {"query": "compare benchmarks"})
+        assert result == f'{prefix} web_research("compare benchmarks")'
+
     def test_grep(self) -> None:
         """Test grep display shows pattern."""
         prefix = get_glyphs().tool_prefix

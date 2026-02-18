@@ -181,6 +181,21 @@ def _extract_with_pattern(
     return results
 
 
+def extract_pattern(
+    ctx: object,
+    pattern: str,
+    flags: int = 0,
+    max_results: int = 100,
+) -> list[ExtractedMatch]:
+    """Extract matches using an arbitrary regex pattern."""
+    return _extract_with_pattern(
+        ctx,
+        pattern=pattern,
+        flags=flags,
+        max_results=max_results,
+    )
+
+
 def extract_numbers(
     ctx: object, include_negative: bool = True, include_decimals: bool = True
 ) -> list[ExtractedMatch]:
@@ -1490,6 +1505,7 @@ CONTEXT_HELPER_NAMES: tuple[str, ...] = (
     "lines",
     "search",
     "chunk",
+    "extract_pattern",
     "extract_numbers",
     "extract_money",
     "extract_percentages",

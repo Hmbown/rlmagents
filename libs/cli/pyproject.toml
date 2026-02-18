@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "rlmagents-cli"
-version = "0.0.21"
+version = "0.0.1"
 description = "Terminal interface for RLMAgents - interactive AI agent with file operations, shell access, and sub-agent capabilities."
 readme = "README.md"
 license = { text = "MIT" }
@@ -26,12 +26,13 @@ classifiers = [
 ]
 dependencies = [
     # Framework
-    "rlmagents==0.1.0",
+    "rlmagents==0.0.1",
     "langchain>=1.2.10,<2.0.0",
     "langgraph-checkpoint-sqlite>=3.0.0,<4.0.0",
 
     # Require at least one integration package
     "langchain-openai>=1.1.8,<2.0.0",
+    "langchain-deepseek>=1.0.0,<2.0.0",
 
     # UI/Terminal
     "textual>=6.0.0,<8.0.0",
@@ -86,8 +87,6 @@ all-providers = [
 [project.scripts]
 rlmagents = "deepagents_cli:cli_main"
 rlmagents-cli = "deepagents_cli:cli_main"
-deepagents = "deepagents_cli:cli_main"
-deepagents-cli = "deepagents_cli:cli_main"
 
 [project.urls]
 Homepage = "https://github.com/Hmbown/rlmagents"

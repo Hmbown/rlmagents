@@ -481,6 +481,16 @@ class REPLEnvironment:
             self._evidence.append(citation)
             return citation
 
+        def _get_evidence(limit: int = 20, offset: int = 0) -> list[Citation]:
+            """Return evidence captured via `cite()` in this REPL session."""
+            if limit < 0:
+                raise ValueError("limit must be non-negative")
+            if offset < 0:
+                raise ValueError("offset must be non-negative")
+            if limit == 0:
+                return []
+            return list(self._evidence[offset : offset + limit])
+
         def _require_sub_query() -> Callable[[str, str | None], object]:
             fn = self._namespace.get("sub_query")
             if not callable(fn):
@@ -633,6 +643,7 @@ class REPLEnvironment:
 
         helpers_ns: dict[str, object] = {
             "cite": _cite_and_store,
+            "get_evidence": _get_evidence,
             "_evidence": self._evidence,
             "allowed_imports": lambda: list(self.config.allowed_imports),
             "is_import_allowed": lambda name: name.split(".", 1)[0] in self.config.allowed_imports,

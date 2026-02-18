@@ -113,7 +113,7 @@ class TestExtractCommandTypes:
 
     def test_complex_real_world_command(self):
         """Test extracting command types from real-world complex command."""
-        cmd = "cd /Users/jacoblee/langchain/deepagents/libs/acp && python -m pytest tests/test_agent.py -v"  # noqa: E501
+        cmd = "cd /path/to/repo/libs/acp && python -m pytest tests/test_agent.py -v"  # noqa: E501
         assert extract_command_types(cmd) == ["cd", "python -m pytest"]
 
     def test_security_python_different_modules(self):

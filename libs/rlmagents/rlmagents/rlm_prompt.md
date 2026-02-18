@@ -24,10 +24,10 @@ When executing Python in a context, these helpers are pre-loaded:
 
 **Navigation**: `peek(start, end)`, `lines(start, end)`, `head(n)`, `tail(n)`
 **Search**: `search(pattern)`, `grep(pattern)`, `semantic_search(query)`, `find_all(pattern)`
-**Extraction**: `extract_numbers()`, `extract_emails()`, `extract_urls()`, `extract_dates()`, `extract_functions(lang)`, `extract_classes(lang)`, `extract_imports(lang)`, `extract_json_objects()`
+**Extraction**: `extract_pattern(pattern)`, `extract_numbers()`, `extract_emails()`, `extract_urls()`, `extract_dates()`, `extract_functions(lang)`, `extract_classes(lang)`, `extract_imports(lang)`, `extract_json_objects()`
 **Statistics**: `word_count()`, `line_count()`, `char_count()`, `word_frequency()`, `ngrams(n)`
 **Text ops**: `replace_all(old, new)`, `between(start, end)`, `split_by(delim)`, `chunk(size, overlap)`
-**Citations**: `cite(snippet, line_range, note)` -- records evidence with provenance
+**Citations**: `cite(snippet, line_range, note)` and `get_evidence(limit, offset)` -- records and inspects evidence captured in the current REPL session
 **Sub-queries**: `sub_query(prompt, context_slice)` -- delegate to a sub-LLM
 **Context mutation**: `ctx_append(text)`, `ctx_set(text)` -- modify context in place
 

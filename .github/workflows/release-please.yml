@@ -16,7 +16,7 @@ on:
 
 jobs:
   release-please:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux]
     permissions:
       contents: write
       pull-requests: write
@@ -63,7 +63,7 @@ jobs:
   update-lockfiles:
     needs: release-please
     if: needs.release-please.outputs.pr != ''
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux]
     permissions:
       contents: write
     steps:
@@ -72,25 +72,21 @@ jobs:
         with:
           ref: ${{ fromJson(needs.release-please.outputs.pr).headBranchName }}
 
-      - name: Setup uv
-        uses: astral-sh/setup-uv@v7
+      - name: Set up Python + UV
+        uses: "./.github/actions/uv_setup"
+        with:
+          python-version: "3.12"
 
       - name: Update lockfiles
         run: |
-          for dir in $(find . -name "uv.lock" -type f -exec dirname {} \;); do
-            echo "Updating $dir"
-            if [ "$dir" = "./libs/acp" ]; then
-              uv lock --directory "$dir" --python 3.14
-            else
-              uv lock --directory "$dir" --python 3.12
-            fi
-          done
+          uv lock --directory libs/cli --python 3.12
+          uv lock --directory libs/rlmagents --python 3.12
 
       - name: Commit and push
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add "*/uv.lock"
+          git add libs/cli/uv.lock libs/rlmagents/uv.lock
           if git diff --staged --quiet; then
             echo "No lockfile changes to commit"
           else
@@ -100,12 +96,12 @@ jobs:
 
   # Trigger release workflow when CLI release PR is merged
   # GitHub release is created by release.yml AFTER all checks pass
-  release-deepagents-cli:
+  release-rlmagents-cli:
     needs: release-please
     if: needs.release-please.outputs.cli-release == 'true'
     uses: ./.github/workflows/release.yml
     with:
-      package: deepagents-cli
+      package: rlmagents-cli
     permissions:
       contents: write
       id-token: write

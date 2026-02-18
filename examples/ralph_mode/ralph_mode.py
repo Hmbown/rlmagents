@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-Ralph Mode - Autonomous looping for Deep Agents
+Ralph Mode - Autonomous looping for RLMAgents CLI
 
 Ralph is an autonomous looping pattern created by Geoff Huntley.
 Each loop starts with fresh context. The filesystem and git serve as memory.
 
 Usage:
-    uv pip install deepagents-cli
+    uv pip install rlmagents-cli
     python ralph_mode.py "Build a Python course. Use git."
     python ralph_mode.py "Build a REST API" --iterations 5
 """

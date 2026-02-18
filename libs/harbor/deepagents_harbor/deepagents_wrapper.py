@@ -75,7 +75,7 @@ class DeepAgentsWrapper(BaseAgent):
             model_name: Name of the LLM model to use
             temperature: Temperature setting for the model
             verbose: Enable verbose output
-            use_cli_agent: If True, use create_cli_agent from deepagents-cli (default).
+            use_cli_agent: If True, use create_cli_agent from rlmagents-cli (default).
                 If False, use create_deep_agent from SDK.
         """
         super().__init__(logs_dir, model_name, *args, **kwargs)

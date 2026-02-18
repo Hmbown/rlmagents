@@ -1,9 +1,11 @@
 """Tests for config module including project discovery utilities."""
 
 from pathlib import Path
+from typing import Any
 from unittest.mock import Mock, patch
 
 import pytest
+from langchain_core.messages import AIMessage, HumanMessage
 
 from deepagents_cli import model_config
 from deepagents_cli.config import (
@@ -1182,6 +1184,116 @@ class TestCreateModelEdgeCaseParsing:
 
         create_model("")
         mock_default.assert_called_once()
+
+
+class _FakeInput:
+    def __init__(self, messages: list[Any]) -> None:
+        self._messages = messages
+
+    def to_messages(self) -> list[Any]:
+        return self._messages
+
+
+class _FakeDeepSeekModel:
+    profile = None
+
+    def _convert_input(self, input_: list[Any]) -> _FakeInput:
+        return _FakeInput(input_)
+
+    def _get_request_payload(
+        self,
+        input_: list[Any],
+        *,
+        stop: list[str] | None = None,  # noqa: ARG002
+        **kwargs: Any,  # noqa: ARG002
+    ) -> dict[str, Any]:
+        messages: list[dict[str, Any]] = []
+        for message in input_:
+            if isinstance(message, HumanMessage):
+                messages.append({"role": "user", "content": message.content})
+                continue
+            if not isinstance(message, AIMessage):
+                continue
+            assistant_message: dict[str, Any] = {
+                "role": "assistant",
+                "content": message.content,
+            }
+            if message.tool_calls:
+                assistant_message["tool_calls"] = [
+                    {
+                        "type": "function",
+                        "id": call.get("id", "call_1"),
+                        "function": {
+                            "name": call.get("name", "tool"),
+                            "arguments": "{}",
+                        },
+                    }
+                    for call in message.tool_calls
+                ]
+            messages.append(assistant_message)
+        return {"messages": messages}
+
+
+class TestCreateModelDeepSeekReasonerPatch:
+    """Tests DeepSeek reasoner payload patching."""
+
+    @patch("deepagents_cli.config.init_chat_model")
+    def test_reasoner_payload_includes_reasoning_content(
+        self, mock_init_chat_model: Mock
+    ) -> None:
+        """`deepseek-reasoner` re-injects `reasoning_content` for tool calls."""
+        mock_init_chat_model.return_value = _FakeDeepSeekModel()
+        result = create_model("deepseek:deepseek-reasoner")
+
+        payload_fn = result.model._get_request_payload
+        payload = payload_fn(
+            [
+                HumanMessage(content="hello"),
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "type": "tool_call",
+                            "name": "ls",
+                            "args": {},
+                            "id": "call_1",
+                        }
+                    ],
+                    additional_kwargs={"reasoning_content": "analysis step"},
+                ),
+            ]
+        )
+
+        assert payload["messages"][1]["reasoning_content"] == "analysis step"
+
+    @patch("deepagents_cli.config.init_chat_model")
+    def test_non_reasoner_payload_is_unchanged(
+        self, mock_init_chat_model: Mock
+    ) -> None:
+        """`deepseek-chat` does not inject `reasoning_content`."""
+        mock_init_chat_model.return_value = _FakeDeepSeekModel()
+        result = create_model("deepseek:deepseek-chat")
+
+        payload_fn = result.model._get_request_payload
+        payload = payload_fn(
+            [
+                HumanMessage(content="hello"),
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "type": "tool_call",
+                            "name": "ls",
+                            "args": {},
+                            "id": "call_1",
+                        }
+                    ],
+                    additional_kwargs={"reasoning_content": "analysis step"},
+                ),
+            ]
+        )
+
+        assert "reasoning_content" not in payload["messages"][1]
 
 
 class TestDetectProvider:

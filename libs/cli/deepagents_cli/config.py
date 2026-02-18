@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from importlib.metadata import PackageNotFoundError, distribution
 from pathlib import Path
+from types import MethodType
 from typing import Any
 
 import dotenv
@@ -43,7 +44,11 @@ if _rlmagents_project:
 
 # E402: Now safe to import LangChain modules
 from langchain.chat_models import init_chat_model  # noqa: E402
-from langchain_core.language_models import BaseChatModel  # noqa: E402
+from langchain_core.language_models import (  # noqa: E402
+    BaseChatModel,
+    LanguageModelInput,
+)
+from langchain_core.messages import AIMessage  # noqa: E402
 from langchain_core.runnables import RunnableConfig  # noqa: E402
 
 from deepagents_cli.model_config import (  # noqa: E402
@@ -1495,6 +1500,86 @@ def _get_provider_kwargs(
     return result
 
 
+def _patch_deepseek_reasoner_payload(
+    model: BaseChatModel,
+    *,
+    provider: str,
+    model_name: str,
+) -> None:
+    """Patch DeepSeek reasoner payload serialization for tool-call loops.
+
+    DeepSeek reasoner requires `reasoning_content` on prior assistant tool-call
+    messages. Current LangChain OpenAI message serialization can drop this field,
+    causing request failures on follow-up turns. This patch re-injects the field
+    from `AIMessage.additional_kwargs`.
+
+    Args:
+        model: Instantiated chat model.
+        provider: Resolved provider name.
+        model_name: Resolved model name.
+    """
+    if provider != "deepseek" or "reasoner" not in model_name.lower():
+        return
+
+    if getattr(model, "_rlmagents_deepseek_reasoner_patch", False):
+        return
+
+    get_request_payload = getattr(model, "_get_request_payload", None)
+    convert_input = getattr(model, "_convert_input", None)
+    if not callable(get_request_payload) or not callable(convert_input):
+        logger.warning(
+            "Could not patch DeepSeek reasoner payload path for %s; "
+            "missing payload conversion methods",
+            model_name,
+        )
+        return
+
+    original_get_request_payload = get_request_payload
+
+    def _patched_get_request_payload(
+        self: BaseChatModel,  # noqa: ARG001 - required for MethodType binding
+        input_: LanguageModelInput,
+        *,
+        stop: list[str] | None = None,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        payload = original_get_request_payload(input_, stop=stop, **kwargs)
+        payload_messages = payload.get("messages")
+        if not isinstance(payload_messages, list):
+            return payload
+
+        try:
+            messages = convert_input(input_).to_messages()
+        except Exception:
+            logger.debug(
+                "Failed to inspect messages for DeepSeek reasoning passthrough",
+                exc_info=True,
+            )
+            return payload
+
+        for lc_message, payload_message in zip(
+            messages, payload_messages, strict=False
+        ):
+            if not isinstance(lc_message, AIMessage):
+                continue
+            if not isinstance(payload_message, dict):
+                continue
+            if payload_message.get("role") != "assistant":
+                continue
+            if "tool_calls" not in payload_message:
+                continue
+            reasoning_content = lc_message.additional_kwargs.get("reasoning_content")
+            if isinstance(reasoning_content, str) and reasoning_content:
+                payload_message["reasoning_content"] = reasoning_content
+
+        return payload
+
+    model._get_request_payload = MethodType(  # type: ignore[attr-defined]
+        _patched_get_request_payload, model
+    )
+    model._rlmagents_deepseek_reasoner_patch = True  # type: ignore[attr-defined]
+
+
 def _create_model_from_class(
     class_path: str,
     model_name: str,
@@ -1702,6 +1787,8 @@ def create_model(
         model = _create_model_from_class(class_path, model_name, provider, kwargs)
     else:
         model = _create_model_via_init(model_name, provider, kwargs)
+
+    _patch_deepseek_reasoner_payload(model, provider=provider, model_name=model_name)
 
     resolved_provider = provider or getattr(model, "_model_provider", provider)
 

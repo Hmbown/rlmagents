@@ -1,0 +1,32 @@
+# Self-hosted GitHub Actions runner via Docker
+# Usage:
+#   1. Copy .env.runner.example → .env.runner and fill in your PAT
+#   2. docker compose -f docker-compose.runner.yml up -d
+#   3. Scale runners:  docker compose -f docker-compose.runner.yml up -d --scale runner=3
+#
+# The runner registers itself on start and deregisters on clean stop (SIGTERM).
+# Ephemeral mode (EPHEMERAL=true) means each job gets a fresh container.
+
+services:
+  runner:
+    image: myoung34/github-runner:latest
+    restart: unless-stopped
+    environment:
+      REPO_URL: https://github.com/Hmbown/rlmagents
+      RUNNER_NAME_PREFIX: docker-runner
+      ACCESS_TOKEN: ${GITHUB_PAT}          # PAT with repo + workflow scopes
+      RUNNER_WORKDIR: /tmp/runner/work
+      LABELS: self-hosted,Linux
+      EPHEMERAL: "true"                    # fresh env per job; remove for persistent
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock  # lets jobs run docker-in-docker
+      - runner_work:/tmp/runner/work
+    # Give the container enough resources for builds
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 4G
+
+volumes:
+  runner_work:

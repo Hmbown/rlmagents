@@ -17,7 +17,7 @@ jobs:
       contents: read
       pull-requests: write
       issues: write
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux]
 
     steps:
       - name: Label Pull Request

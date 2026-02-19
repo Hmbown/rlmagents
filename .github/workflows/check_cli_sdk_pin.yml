@@ -16,7 +16,7 @@ permissions:
 jobs:
   check_cli_sdk_pin:
     if: startsWith(github.event.pull_request.title, 'release(rlmagents-cli)')
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux]
 
     steps:
       - uses: actions/checkout@v6

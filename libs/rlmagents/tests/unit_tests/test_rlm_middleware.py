@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+from unittest.mock import Mock
+
 import pytest
-from langchain_core.messages import AIMessage, ToolMessage
+from langchain.agents.middleware.types import ModelRequest
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 
 from rlmagents.middleware.rlm import _RLM_TOOL_NAMES, RLMMiddleware
 from rlmagents.session_manager import RLMSessionManager
@@ -119,6 +124,133 @@ class TestAutoLoad:
         result = mw._maybe_auto_load(msg, "read_file")
         assert isinstance(result, ToolMessage)
         assert result.content.startswith("[Large result")
+
+
+def _file_mentions_block(paths: list[str]) -> str:
+    payload = json.dumps({"paths": paths}, ensure_ascii=True, separators=(",", ":"))
+    return f"<RLMAGENTS_FILE_MENTIONS_V1>{payload}</RLMAGENTS_FILE_MENTIONS_V1>"
+
+
+def _system_text(system_message: SystemMessage | None) -> str:
+    if system_message is None:
+        return ""
+    content = system_message.content
+    if isinstance(content, str):
+        return content
+    parts: list[str] = []
+    for block in system_message.content_blocks:
+        if isinstance(block, str):
+            parts.append(block)
+            continue
+        if isinstance(block, dict):
+            text = block.get("text", "")
+            if isinstance(text, str):
+                parts.append(text)
+    return "\n".join(parts)
+
+
+def _call_wrap_model(middleware: RLMMiddleware, messages: list) -> ModelRequest:
+    request = ModelRequest(
+        model=Mock(),
+        messages=messages,
+        system_message=None,
+        tools=[],
+        runtime=None,
+        state={"messages": messages},
+    )
+    captured_request: ModelRequest | None = None
+
+    def handler(req: ModelRequest) -> AIMessage:
+        nonlocal captured_request
+        captured_request = req
+        return AIMessage(content="ok")
+
+    middleware.wrap_model_call(request, handler)
+    assert captured_request is not None
+    return captured_request
+
+
+class TestCliFileMentionAutoLoad:
+    def test_wrap_model_call_auto_loads_cli_file_mentions(self, tmp_path: Path):
+        file_path = tmp_path / "sample.py"
+        file_path.write_text("print('hello')\n", encoding="utf-8")
+
+        middleware = RLMMiddleware(system_prompt="")
+        metadata = _file_mentions_block([str(file_path)])
+        messages = [HumanMessage(content=f"Please review.\n{metadata}")]
+        captured = _call_wrap_model(middleware, messages)
+
+        assert len(middleware.manager.sessions) == 1
+        context_id = next(iter(middleware.manager.sessions))
+        assert context_id.startswith("mention_sample_")
+        assert "CLI @file auto-load" in _system_text(captured.system_message)
+        assert context_id in _system_text(captured.system_message)
+
+    def test_wrap_model_call_reuses_deterministic_context_id(self, tmp_path: Path):
+        file_path = tmp_path / "repeat.py"
+        file_path.write_text("first version", encoding="utf-8")
+
+        middleware = RLMMiddleware(system_prompt="")
+        metadata = _file_mentions_block([str(file_path)])
+
+        _call_wrap_model(middleware, [HumanMessage(content=metadata)])
+        context_id = next(iter(middleware.manager.sessions))
+        first_ctx = middleware.manager.get_session(context_id)
+        assert first_ctx is not None
+        assert first_ctx.repl.get_variable("ctx") == "first version"
+
+        file_path.write_text("second version", encoding="utf-8")
+        _call_wrap_model(middleware, [HumanMessage(content=metadata)])
+        second_ctx = middleware.manager.get_session(context_id)
+        assert second_ctx is not None
+        assert second_ctx.repl.get_variable("ctx") == "second version"
+
+    def test_wrap_model_call_skips_when_latest_message_is_not_user(
+        self, tmp_path: Path
+    ):
+        file_path = tmp_path / "ignored.py"
+        file_path.write_text("ignored", encoding="utf-8")
+
+        middleware = RLMMiddleware(system_prompt="")
+        metadata = _file_mentions_block([str(file_path)])
+        messages = [
+            HumanMessage(content=metadata),
+            AIMessage(content="follow-up"),
+        ]
+        captured = _call_wrap_model(middleware, messages)
+
+        assert middleware.manager.sessions == {}
+        assert captured.system_message is None
+
+    def test_wrap_model_call_parses_multimodal_user_content(self, tmp_path: Path):
+        file_path = tmp_path / "multi.py"
+        file_path.write_text("print('multi')", encoding="utf-8")
+
+        middleware = RLMMiddleware(system_prompt="")
+        metadata = _file_mentions_block([str(file_path)])
+        messages = [
+            HumanMessage(
+                content=[
+                    {"type": "text", "text": f"Analyze this file.\n{metadata}"},
+                    {"type": "image_url", "image_url": {"url": "data:image/png;base64,AA=="}},
+                ]
+            )
+        ]
+
+        _call_wrap_model(middleware, messages)
+        assert len(middleware.manager.sessions) == 1
+
+    def test_wrap_model_call_reports_missing_files(self, tmp_path: Path):
+        missing_file = tmp_path / "missing.py"
+        middleware = RLMMiddleware(system_prompt="")
+        metadata = _file_mentions_block([str(missing_file)])
+        captured = _call_wrap_model(middleware, [HumanMessage(content=metadata)])
+
+        assert middleware.manager.sessions == {}
+        system_text = _system_text(captured.system_message)
+        assert "CLI @file auto-load" in system_text
+        assert "Skipped:" in system_text
+        assert "missing.py" in system_text
 
 
 class TestSessionManager:

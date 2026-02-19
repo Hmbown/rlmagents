@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
+    from pathlib import Path
 
 from langchain.agents.middleware.human_in_the_loop import (
     ApproveDecision,
@@ -41,6 +42,25 @@ logger = logging.getLogger(__name__)
 HITLDecision = ApproveDecision | EditDecision | RejectDecision
 
 _HITL_REQUEST_ADAPTER = TypeAdapter(HITLRequest)
+_FILE_MENTION_METADATA_TAG = "RLMAGENTS_FILE_MENTIONS_V1"
+
+
+def _build_file_mentions_metadata_block(paths: list[Path]) -> str:
+    """Build a machine-readable metadata block for `@file` mentions.
+
+    The block is appended to the user message text so downstream middleware can
+    reliably recover referenced file paths without brittle markdown parsing.
+
+    Returns:
+        XML-like metadata payload, or an empty string when there are no paths.
+    """
+    if not paths:
+        return ""
+    payload = {
+        "paths": [str(path) for path in paths],
+    }
+    encoded = json.dumps(payload, ensure_ascii=True, separators=(",", ":"))
+    return f"\n\n<{_FILE_MENTION_METADATA_TAG}>{encoded}</{_FILE_MENTION_METADATA_TAG}>"
 
 
 def _build_stream_config(
@@ -274,6 +294,10 @@ async def execute_task_textual(
         final_input = "\n".join(context_parts)
     else:
         final_input = prompt_text
+
+    metadata_block = _build_file_mentions_metadata_block(mentioned_files)
+    if metadata_block:
+        final_input = f"{final_input}{metadata_block}"
 
     # Include images in the message content
     images_to_send = []

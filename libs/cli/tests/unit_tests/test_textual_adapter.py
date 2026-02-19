@@ -1,8 +1,10 @@
 """Unit tests for textual_adapter functions."""
 
+import json
 from asyncio import Future
 from collections.abc import Generator
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -10,6 +12,7 @@ import pytest
 
 from deepagents_cli.textual_adapter import (
     TextualUIAdapter,
+    _build_file_mentions_metadata_block,
     _build_interrupted_ai_message,
     _build_stream_config,
     _is_summarization_chunk,
@@ -144,6 +147,27 @@ class TestIsSummarizationChunk:
 
         metadata_missing = {"other_key": "value"}
         assert _is_summarization_chunk(metadata_missing) is False
+
+
+class TestFileMentionsMetadata:
+    """Tests for CLI metadata block generation for `@file` mentions."""
+
+    def test_builds_metadata_block_for_paths(self) -> None:
+        paths = [Path("/tmp/a.py"), Path("/tmp/b.py")]
+        block = _build_file_mentions_metadata_block(paths)
+
+        assert "<RLMAGENTS_FILE_MENTIONS_V1>" in block
+        assert "</RLMAGENTS_FILE_MENTIONS_V1>" in block
+
+        payload = block.split("<RLMAGENTS_FILE_MENTIONS_V1>", 1)[1].split(
+            "</RLMAGENTS_FILE_MENTIONS_V1>",
+            1,
+        )[0]
+        parsed = json.loads(payload)
+        assert parsed == {"paths": ["/tmp/a.py", "/tmp/b.py"]}
+
+    def test_returns_empty_for_no_paths(self) -> None:
+        assert _build_file_mentions_metadata_block([]) == ""
 
 
 # ---------------------------------------------------------------------------

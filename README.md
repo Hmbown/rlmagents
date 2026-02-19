@@ -25,7 +25,9 @@ RLM design reference: [Recursive Language Model paper](https://arxiv.org/abs/251
 
 RLMAgents follows the core RLM pattern from the paper (arXiv:2512.24601):
 
-- Prompt content is stored in an external REPL variable and accessed symbolically.
+- Context is externalized into REPL sessions via `load_context` / `load_file_context`;
+  in the CLI, resolved `@file` mentions are auto-loaded into RLM contexts before
+  model reasoning.
 - The model iterates by writing code, observing execution feedback, and setting a final result.
 - Recursion is programmatic through `sub_query()`/`llm_query()` inside the REPL.
 

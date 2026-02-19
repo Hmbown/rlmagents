@@ -1,54 +1,34 @@
 # RLMAgents
 
-RLMAgents is an **RLM-native** agent harness for coding and research workflows built on
-LangChain + LangGraph.
+Agent harness for coding and research workflows, built on LangChain + LangGraph.
 
-It extends LangChain's **Deep Agents** project into a release-ready RLM workflow stack:
-isolated context sessions, evidence-backed reasoning, recursive sub-queries, a sandboxed
-Python analysis REPL, and recipe pipelines.
+Fork of LangChain's [Deep Agents](https://github.com/langchain-ai/deepagents) project
+with added context isolation, evidence tracking, recursive sub-queries, a restricted
+Python REPL, and recipe pipelines. Design follows the
+[Recursive Language Model paper](https://arxiv.org/abs/2512.24601).
 
-Upstream Deep Agents project: https://github.com/langchain-ai/deepagents  
-RLM design reference: [Recursive Language Model paper](https://arxiv.org/abs/2512.24601)
+## How it works
 
-## RLM architecture (in practice)
+- **Context isolation** -- load large artifacts into named sessions and query them
+  without polluting the main conversation (`load_context`, `load_file`).
+- **Evidence tracking** -- findings keep provenance metadata so answers can be cited.
+- **Recursive sub-queries** -- call `sub_query()` (aliased as `llm_query()`) inside the
+  REPL. By default sub-queries use the same model as the main agent unless
+  `sub_query_model` is set.
+- **Restricted Python REPL** -- run analysis code over loaded contexts. Best-effort
+  restriction, not a hard security sandbox.
+- **Recipes** -- declarative multi-step pipelines (`validate_recipe`, `estimate_recipe`).
+- **`@file` mentions** -- in the CLI, `@path/to/file` in your prompt auto-loads that
+  file into an RLM context before the model runs.
 
-- **Context isolation**: load large artifacts into named sessions and query them without
-  polluting the main conversation.
-- **Evidence tracking**: keep provenance for findings and generate cited answers.
-- **Recursive sub-queries**: call `sub_query()` / `llm_query()` inside the REPL. By default,
-  sub-queries reuse the same model/provider API as the main agent unless `sub_query_model`
-  is explicitly set.
-- **Best-effort restricted Python REPL**: run analysis over loaded contexts and produce structured outputs (not a hard security sandbox).
-- **Recipes**: declarative multi-step pipelines for repeatable research and coding tasks.
+## Monorepo layout
 
-## Paper Alignment and RLMAgents Extensions
-
-RLMAgents follows the core RLM pattern from the paper (arXiv:2512.24601):
-
-- Context is externalized into REPL sessions via `load_context` / `load_file_context`;
-  in the CLI, resolved `@file` mentions are auto-loaded into RLM contexts before
-  model reasoning.
-- The model iterates by writing code, observing execution feedback, and setting a final result.
-- Recursion is programmatic through `sub_query()`/`llm_query()` inside the REPL.
-
-RLMAgents also adds implementation layers that are not part of the paper's core algorithm:
-
-- Evidence and citation lifecycle (`get_evidence`, provenance metadata, pruning policy)
-- Multi-context operations (`cross_context_search`, context diffing across sessions)
-- Session persistence (`save_session`/`load_session`, memory-pack JSON schema)
-- Recipe system (`validate_recipe`, `estimate_recipe`, `run_recipe`, DSL compilation)
-- Context-pressure policy (including rlmagents-specific compaction heuristics)
-- Agent-harness integrations (auto-loading large tool outputs, sub-agent-wide RLM middleware)
-
-If one of these extension features fails, treat it as an RLMAgents implementation issue,
-not user error and not a failure of the base RLM paper design.
-
-## Monorepo Packages
-
-- `libs/rlmagents` — core Python harness (`rlmagents`)
-- `libs/cli` — terminal application (`rlmagents-cli`)
-- `libs/acp` — Agent Context Protocol support
-- `libs/harbor` — evaluation and benchmark tooling
+| Path | Package | Description |
+|------|---------|-------------|
+| `libs/rlmagents` | `rlmagents` | Core Python harness |
+| `libs/cli` | `rlmagents-cli` | Terminal application |
+| `libs/acp` | `deepagents-acp` | Agent Context Protocol integration (e.g. Zed) |
+| `libs/harbor` | `deepagents-harbor` | Evaluation framework (Terminal Bench, Harbor) |
 
 ## Quickstart (SDK)
 
@@ -65,7 +45,7 @@ agent = create_rlm_agent()
 result = agent.invoke(
     {
         "messages": [
-            {"role": "user", "content": "Research LangGraph and summarize key ideas"}
+            {"role": "user", "content": "Summarize the key ideas in this paper."}
         ]
     }
 )
@@ -73,102 +53,63 @@ result = agent.invoke(
 
 ## Quickstart (CLI)
 
-Run the CLI directly from this repository:
+Run from this repository:
 
 ```bash
 uv run --project libs/cli rlmagents
 ```
 
-The CLI includes:
-
-- Interactive and non-interactive execution
-- Conversation resume and thread management
-- Human-in-the-loop approval controls
-- Remote sandbox integrations
-- Persistent memory and skill loading from `.rlmagents`
-
-## Example Commands
-
 ```bash
+# Non-interactive one-shot
 rlmagents -n "Summarize the repository architecture"
+
+# Resume last conversation
 rlmagents -r
+
+# Manage threads and skills
 rlmagents threads list
 rlmagents skills list
 ```
 
-## RLM Capabilities Examples
+The CLI supports interactive and non-interactive modes, conversation threads,
+human-in-the-loop approval, remote sandbox backends, and persistent memory
+via `.rlmagents/`.
 
-### Context isolation and evidence tracking
+## Paper alignment
 
-```python
-from rlmagents import create_rlm_agent
+The core loop follows Algorithm 1 from arXiv:2512.24601:
 
-agent = create_rlm_agent()
-result = agent.invoke(
-    {
-        "messages": [
-            {
-                "role": "user",
-                "content": (
-                    "Load this long report into a context named 'report_q1', "
-                    "extract the key findings, and return a cited summary."
-                ),
-            }
-        ]
-    }
-)
-```
+1. Context is externalized into REPL sessions (`load_context` / `load_file`).
+   CLI `@file` mentions are auto-loaded before model reasoning.
+2. The model iterates by writing code, observing execution output, and setting
+   a final result.
+3. Recursion happens via `sub_query()` / `llm_query()` inside the REPL.
 
-### Recursive sub-queries and REPL analysis
-
-```python
-result = agent.invoke(
-    {
-        "messages": [
-            {
-                "role": "user",
-                "content": (
-                    "Analyze three data sources in parallel with subagents, "
-                    "use Python for numeric analysis, then synthesize one answer."
-                ),
-            }
-        ]
-    }
-)
-```
-
-### Recipe pipelines
-
-```python
-recipe = {
-    "version": "rlm.recipe.v1",
-    "steps": [
-        {"op": "load", "content": "Quarterly sales data..."},
-        {"op": "search", "pattern": "\\d+(?:\\.\\d+)?"},
-        {"op": "aggregate", "prompt": "Summarize trends and outliers"},
-    ],
-}
-```
+Additional layers beyond the paper: evidence lifecycle and citations,
+multi-context search, session persistence (memory-pack JSON), recipe DSL,
+context-pressure compaction, and agent-harness middleware.
 
 ## Development
 
-```bash
-# Run monorepo tests
-make test
+Tests and linting are per-package (there is no root-level `make test`):
 
-# Lint and format
-make lint
-make format
+```bash
+# CLI
+cd libs/cli && make test
+cd libs/cli && make lint
+
+# Core harness
+cd libs/rlmagents && uv run --group test pytest tests -q
+cd libs/rlmagents && uv run ruff check rlmagents tests
+
+# ACP
+cd libs/acp && make test
+
+# Check all lockfiles
+make lock-check
 ```
 
-Package-specific commands:
+## Links
 
-- `cd libs/cli && uv run --group test pytest tests/unit_tests -q`
-- `cd libs/rlmagents && uv run --group test pytest tests -q`
-- `cd libs/acp && uv run --group test pytest tests/test_command_allowlist.py -q`
-
-## Repository
-
-- GitHub: `https://github.com/Hmbown/rlmagents`
-- CLI source: `libs/cli`
-- Harness source: `libs/rlmagents/rlmagents`
+- GitHub: https://github.com/Hmbown/rlmagents
+- Upstream: https://github.com/langchain-ai/deepagents

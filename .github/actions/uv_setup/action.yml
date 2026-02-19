@@ -37,3 +37,4 @@ runs:
           ${{ inputs.working-directory }}/uv.lock
           ${{ inputs.working-directory }}/requirements*.txt
         cache-suffix: ${{ inputs.cache-suffix }}
+        github-token: ${{ github.token }}

@@ -18,7 +18,7 @@ RLM design reference: [Recursive Language Model paper](https://arxiv.org/abs/251
 - **Recursive sub-queries**: call `sub_query()` / `llm_query()` inside the REPL. By default,
   sub-queries reuse the same model/provider API as the main agent unless `sub_query_model`
   is explicitly set.
-- **Sandboxed Python REPL**: run analysis over loaded contexts and produce structured outputs.
+- **Best-effort restricted Python REPL**: run analysis over loaded contexts and produce structured outputs (not a hard security sandbox).
 - **Recipes**: declarative multi-step pipelines for repeatable research and coding tasks.
 
 ## Paper Alignment and RLMAgents Extensions

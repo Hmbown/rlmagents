@@ -88,6 +88,8 @@ RLMAgents bakes the RLM workflow directly into agent behavior:
 - Findings can be traced to evidence.
 - Recursive sub-queries offload targeted analysis.
 - The REPL enables deterministic extraction and computation.
+
+Security note: the REPL is best-effort restricted by policy and timeouts, but it is not a formally hardened sandbox.
 - Recipe pipelines make repeated analysis reproducible.
 
 ## RLM Workflow

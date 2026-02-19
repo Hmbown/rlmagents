@@ -12,6 +12,10 @@ with added context isolation, evidence tracking, recursive sub-queries, a restri
 Python REPL, and recipe pipelines. Design follows the
 [Recursive Language Model paper](https://arxiv.org/abs/2512.24601).
 
+As of `rlmagents==0.0.3`, a single install provides both:
+- the Python API (`from rlmagents import create_rlm_agent`)
+- the terminal CLI/TUI (`rlmagents`)
+
 ## How it works
 
 - **Context isolation** -- load large artifacts into named sessions and query them
@@ -30,8 +34,8 @@ Python REPL, and recipe pipelines. Design follows the
 
 | Path | Package | Description |
 |------|---------|-------------|
-| `libs/rlmagents` | `rlmagents` | Core Python harness |
-| `libs/cli` | `rlmagents-cli` | Terminal application |
+| `libs/rlmagents` | `rlmagents` | Published package (Python API + bundled CLI/TUI) |
+| `libs/cli` | `rlmagents-cli` | Standalone CLI package kept for monorepo development |
 | `libs/acp` | `deepagents-acp` | Agent Context Protocol integration (e.g. Zed) |
 | `libs/harbor` | `deepagents-harbor` | Evaluation framework (Terminal Bench, Harbor) |
 
@@ -69,6 +73,10 @@ If you're developing locally, you can run directly from the repo with
 [uv](https://docs.astral.sh/uv/):
 
 ```bash
+# Run from the bundled package (matches published behavior)
+uv run --project libs/rlmagents rlmagents
+
+# Or run from the standalone CLI package while developing CLI-only changes
 uv run --project libs/cli rlmagents
 ```
 

@@ -52,18 +52,6 @@
   "component-no-space": true,
   "pull-request-header": "",
   "packages": {
-    "libs/cli": {
-      "release-type": "python",
-      "package-name": "rlmagents-cli",
-      "component": "rlmagents-cli",
-      "bump-minor-pre-major": true,
-      "bump-patch-for-minor-pre-major": true,
-      "extra-files": [
-        "pyproject.toml",
-        "deepagents_cli/_version.py"
-      ],
-      "changelog-path": "CHANGELOG.md"
-    },
     "libs/rlmagents": {
       "release-type": "python",
       "package-name": "rlmagents",

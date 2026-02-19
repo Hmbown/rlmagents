@@ -1,15 +1,15 @@
-# CLI Release Process
+# Release Process
 
-This document describes the release process for the CLI package (`libs/cli`) in the Deep Agents monorepo using [release-please](https://github.com/googleapis/release-please).
+This document describes the release process for the `rlmagents` package in this repository using [release-please](https://github.com/googleapis/release-please).
 
 ## Overview
 
-CLI releases are managed via release-please, which:
+Package releases are managed via release-please, which:
 
 1. Analyzes conventional commits on the `main` branch
 2. Creates/updates a release PR with changelog and version bump
-3. When merged, creates a draft GitHub release for review
-4. Publishing the draft triggers PyPI publication
+3. When merged, creates a GitHub release
+4. The release workflow publishes to PyPI and uploads artifacts
 
 ## How It Works
 
@@ -25,14 +25,14 @@ Release PRs are created on branches named `release-please--branches--main--compo
 
 ### Triggering a Release
 
-To release the CLI:
+To trigger a package release:
 
 1. Merge conventional commits to `main` (see [Commit Format](#commit-format))
 2. Wait for release-please to create/update the release PR
 3. Review the generated changelog in the PR
-4. Merge the release PR — this creates a **draft** GitHub release
+4. Merge the release PR — this creates a GitHub release
 5. Review and edit the release notes in the GitHub UI
-6. Click "Publish release" — this triggers PyPI publication
+6. Publishing is handled through `.github/workflows/release.yml`, and PyPI upload is triggered from the same release flow.
 
 ### Version Bumping
 
@@ -40,9 +40,9 @@ Version bumps are determined by commit types:
 
 | Commit Type                    | Version Bump  | Example                                  |
 | ------------------------------ | ------------- | ---------------------------------------- |
-| `fix:`                         | Patch (0.0.x) | `fix(cli): resolve config loading issue` |
-| `feat:`                        | Minor (0.x.0) | `feat(cli): add new export command`      |
-| `feat!:` or `BREAKING CHANGE:` | Major (x.0.0) | `feat(cli)!: redesign config format`     |
+| `fix:`                         | Patch (0.0.x) | `fix(rlmagents): resolve config loading issue` |
+| `feat:`                        | Minor (0.x.0) | `feat(rlmagents): add new export command`      |
+| `feat!:` or `BREAKING CHANGE:` | Major (x.0.0) | `feat(rlmagents)!: redesign config format`     |
 
 > [!NOTE]
 > While version is < 1.0.0, `bump-minor-pre-major` and `bump-patch-for-minor-pre-major` are enabled, so breaking changes bump minor and features bump patch.
@@ -63,13 +63,13 @@ All commits must follow [Conventional Commits](https://www.conventionalcommits.o
 
 ```bash
 # Patch release
-fix(cli): resolve type hinting issue
+fix(rlmagents): resolve type hinting issue
 
 # Minor release
-feat(cli): add new chat completion feature
+feat(rlmagents): add new chat completion feature
 
 # Major release (breaking change)
-feat(cli)!: redesign configuration format
+feat(rlmagents)!: redesign configuration format
 
 BREAKING CHANGE: Config files now use TOML instead of JSON.
 ```
@@ -86,7 +86,7 @@ Tracks the current version of each package:
 
 ```json
 {
-  "libs/cli": "0.0.17"
+  "libs/rlmagents": "0.0.1"
 }
 ```
 
@@ -96,24 +96,23 @@ This file is automatically updated by release-please when releases are created.
 
 ### Detection Mechanism
 
-The release-please workflow (`.github/workflows/release-please.yml`) detects a CLI release by checking if `libs/cli/CHANGELOG.md` was modified in the commit. This file is always updated by release-please when merging a release PR.
+The release-please workflow (`.github/workflows/release-please.yml`) detects rlmagents releases by checking whether `libs/rlmagents/CHANGELOG.md` changed in the merge commit. This file is always updated by release-please when release PRs are merged.
 
 ### Lockfile Updates
 
-When release-please creates or updates a release PR, the `update-lockfiles` job automatically regenerates `uv.lock` files since release-please updates `pyproject.toml` versions but doesn't regenerate lockfiles. An up-to-date lockfile is necessary for the cli since it depends on the SDK, and `libs/harbor` depends on the CLI.
+When release-please creates or updates a release PR, the `update-lockfiles` job automatically regenerates `uv.lock` files since release-please updates `pyproject.toml` versions but doesn't regenerate lockfiles. Keep lockfiles in sync to avoid stale dependency resolution.
 
 ### Release Pipeline
 
 The release workflow (`.github/workflows/release.yml`) runs when a release PR is merged:
 
 1. **Build** - Creates distribution package
-2. **Collect Contributors** - Gathers PR authors for release notes, including social media handles. Excludes members of `langchain-ai`.
+2. **Collect Contributors** - Gathers PR authors for release notes, including social media handles. Internal contributors are filtered separately.
 3. **Release Notes** - Extracts changelog or generates from git log
 4. **Test PyPI** - Publishes to test.pypi.org for validation
 5. **Pre-release Checks** - Runs tests against the built package
-6. **Mark Release** - Creates a **draft** GitHub release with the built artifacts
-
-When you publish the draft release, `.github/workflows/publish.yml` triggers and publishes to PyPI.
+6. **Mark Release** - Creates a GitHub release with the built artifacts
+This is a published release (not draft) for `rlmagents`.
 
 ### Release PR Labels
 
@@ -134,7 +133,7 @@ For hotfixes or exceptional cases, you can trigger a release manually. Use the `
 
 1. Go to **Actions** > **Package Release**
 2. Click **Run workflow**
-3. Select the CLI
+3. Select `rlmagents`
 4. (Optionally enable `dangerous-nonmain-release` for hotfix branches)
 
 > [!WARNING]
@@ -147,12 +146,12 @@ For hotfixes or exceptional cases, you can trigger a release manually. Use the `
 You may see warnings in the release-please logs like:
 
 ```txt
-⚠ Found release tag with component 'deepagents=', but not configured in manifest
+⚠ Found release tag with an unmanaged component, but not configured in manifest
 ```
 
-This is **harmless**. Release-please scans existing tags in the repository and warns when it finds tags for packages that aren't in the current configuration. The `deepagents` SDK package has existing release tags (`deepagents==0.x.x`) but is not currently managed by release-please.
+This is **harmless**. Release-please scans existing tags in the repository and warns when it finds tags for components that aren't in the current configuration. In this repository, tags from historical package attempts may surface as warnings until they are no longer present.
 
-These warnings will disappear once the SDK is added to `release-please-config.json`. Until then, they can be safely ignored—they don't affect CLI releases.
+These warnings can be safely ignored as long as the tag is expected legacy noise.
 
 ### Unexpected Commit Authors in Release PRs
 
@@ -172,7 +171,7 @@ This is a **GitHub UI quirk** caused by force pushes/rebasing, not actual commit
 
 **The actual PR commits** are only:
 
-- The release commit (e.g., `release(rlmagents-cli): 0.0.18`)
+- The release commit (e.g., `release(rlmagents): 0.0.18`)
 - The lockfile update commit (e.g., `chore: update lockfiles`)
 
 Other commits shown are just the base that the PR branch was rebased onto. This is normal behavior and doesn't indicate unauthorized access.
@@ -185,7 +184,7 @@ If a release PR shows `autorelease: pending` after the release workflow complete
 
 ```bash
 # Find the PR number for the release commit
-gh pr list --state merged --search "release(rlmagents-cli)" --limit 5
+gh pr list --state merged --search "release(rlmagents)" --limit 5
 
 # Update the label
 gh pr edit <PR_NUMBER> --remove-label "autorelease: pending" --add-label "autorelease: tagged"
@@ -205,11 +204,11 @@ Using the PyPI web interface or a CLI tool.
 
 ```bash
 # Delete the GitHub release
-gh release delete "rlmagents-cli==<VERSION>" --yes
+gh release delete "rlmagents==<VERSION>" --yes
 
 # Delete the git tag
-git tag -d "rlmagents-cli==<VERSION>"
-git push origin --delete "rlmagents-cli==<VERSION>"
+git tag -d "rlmagents==<VERSION>"
+git push origin --delete "rlmagents==<VERSION>"
 ```
 
 #### 3. Fix the Manifest
@@ -218,11 +217,11 @@ Edit `.release-please-manifest.json` to the last good version:
 
 ```json
 {
-  "libs/cli": "0.0.15"
+  "libs/rlmagents": "0.0.1"
 }
 ```
 
-Also update `libs/cli/pyproject.toml` and `_version.py` to match.
+Also update `libs/rlmagents/pyproject.toml` to match.
 
 ### Re-releasing a Version
 
@@ -249,7 +248,7 @@ This means a release PR was merged but its merge commit doesn't have the expecte
 
 ```bash
 # Find what commit the tag points to
-git ls-remote --tags origin | grep "rlmagents-cli==<VERSION>"
+git ls-remote --tags origin | grep "rlmagents==<VERSION>"
 
 # Find the release PR's merge commit
 gh pr view <PR_NUMBER> --json mergeCommit --jq '.mergeCommit.oid'
@@ -261,27 +260,27 @@ If these differ, release-please is confused.
 
 ```bash
 # 1. Delete the remote tag
-git push origin :refs/tags/rlmagents-cli==<VERSION>
+git push origin :refs/tags/rlmagents==<VERSION>
 
 # 2. Delete local tag if it exists
-git tag -d rlmagents-cli==<VERSION> 2>/dev/null || true
+git tag -d rlmagents==<VERSION> 2>/dev/null || true
 
 # 3. Create tag on the correct commit (the release PR's merge commit)
-git tag rlmagents-cli==<VERSION> <MERGE_COMMIT_SHA>
+git tag rlmagents==<VERSION> <MERGE_COMMIT_SHA>
 
 # 4. Push the new tag
-git push origin rlmagents-cli==<VERSION>
+git push origin rlmagents==<VERSION>
 
 # 5. Update the GitHub release's target_commitish to match
 #    (moving a tag doesn't update this field automatically)
-gh api -X PATCH repos/<owner>/<repo>/releases/$(gh api repos/<owner>/<repo>/releases --jq '.[] | select(.tag_name == "rlmagents-cli==<VERSION>") | .id') \
+gh api -X PATCH repos/<owner>/<repo>/releases/$(gh api repos/<owner>/<repo>/releases --jq '.[] | select(.tag_name == "rlmagents==<VERSION>") | .id') \
   -f target_commitish=<MERGE_COMMIT_SHA>
 ```
 
 After fixing, the next push to main should properly create new release PRs.
 
 > [!NOTE]
-> Moving a tag will put the associated GitHub release back into draft state. If the package was already published to PyPI, you can safely re-publish the draft — the publish workflow uses `skip-existing: true`, so it will succeed without re-uploading.
+> Moving a tag may require updating release metadata to match the correct commit. If the package was already published to PyPI, you can safely re-run publish — the publish workflow uses `skip-existing: true`, so it will succeed without re-uploading.
 
 ## References
 

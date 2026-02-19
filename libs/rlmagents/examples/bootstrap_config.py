@@ -9,6 +9,10 @@ from langchain.chat_models import init_chat_model
 from rlmagents import create_rlm_agent
 
 _MODEL_INIT_CACHE: dict[str, tuple[bool, Any | str]] = {}
+DEFAULT_DEEPSEEK_MODEL = "deepseek-chat"
+DEFAULT_DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1"
+DEFAULT_MINIMAX_MODEL = "minimax-m2.5"
+DEFAULT_MINIMAX_BASE_URL = "https://api.minimaxi.chat/v1"
 _MODEL_ALIAS_MAP = {
     "deepseek": "deepseek-chat",
     "deepseek-chat": "deepseek-chat",
@@ -44,6 +48,13 @@ def _normalize_alias(alias: str) -> str:
         return alias
     mapped = _MODEL_ALIAS_MAP.get(key.lower())
     return mapped if mapped is not None else alias
+
+
+def _parse_env_value(name: str, default: str) -> str:
+    """Read environment value with fallback."""
+    value = os.environ.get(name, "")
+    value = value.strip() if value else ""
+    return value if value else default
 
 
 def _classify_model_error(exc: Exception) -> str:
@@ -125,18 +136,23 @@ def create_configured_agent(**kwargs: Any) -> Any:
 
     _load_dotenv_if_available()
 
+    main_model_name = _parse_env_value("DEEPSEEK_MODEL_ID", DEFAULT_DEEPSEEK_MODEL)
+    main_model_base_url = _parse_env_value("DEEPSEEK_BASE_URL", DEFAULT_DEEPSEEK_BASE_URL)
+    sub_query_model_name = _parse_env_value("MINIMAX_MODEL_ID", DEFAULT_MINIMAX_MODEL)
+    sub_query_base_url = _parse_env_value("MINIMAX_BASE_URL", DEFAULT_MINIMAX_BASE_URL)
+
     main_model = _init_model(
-        model_id="deepseek-chat",
-        model_alias="deepseek-chat",
+        model_id=main_model_name,
+        model_alias=main_model_name,
         api_key=os.environ["DEEPSEEK_API_KEY"],
-        base_url="https://api.deepseek.com/v1",
+        base_url=main_model_base_url,
     )
 
     sub_query_model = _init_model(
-        model_id="minimax-m2.5",
-        model_alias="minimax-m2.5",
+        model_id=sub_query_model_name,
+        model_alias=sub_query_model_name,
         api_key=os.environ["MINIMAX_API_KEY"],
-        base_url="https://api.minimaxi.chat/v1",
+        base_url=sub_query_base_url,
     )
 
     return create_rlm_agent(

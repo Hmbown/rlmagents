@@ -1,12 +1,11 @@
-# Builds and publishes deepagents packages to PyPI.
+# Builds and publishes the rlmagents package to PyPI.
 #
 # Triggers:
 # - Automatically via workflow_call from release-please.yml when a release PR is merged
 # - Manually via workflow_dispatch
 #
 # Flow:
-# - CLI: build -> pre-release-checks -> test-pypi -> DRAFT release (PyPI publish happens when draft is published)
-# - Other packages: build -> pre-release-checks -> test-pypi -> publish -> release
+# - build -> pre-release-checks -> test-pypi -> publish -> release
 
 name: "🚀 Package Release"
 run-name: "Release ${{ inputs.package }}"
@@ -24,26 +23,13 @@ on:
         type: choice
         description: "Package to release"
         options:
-          - deepagents
-          - rlmagents-cli
           - rlmagents
-          - deepagents-acp
-          - deepagents-harbor
-          - langchain-daytona
-          - langchain-modal
-          - langchain-runloop
-        default: deepagents
+        default: rlmagents
       dangerous-nonmain-release:
         required: false
         type: boolean
         default: false
         description: "Release from a non-main branch (danger!) - Only use for hotfixes"
-      dangerous-skip-sdk-pin-check:
-        required: false
-        type: boolean
-        default: false
-        description: "Skip CLI SDK pin validation (danger!) - Only use when intentionally pinning an older SDK"
-
 env:
   PYTHON_VERSION: "3.11"
   UV_NO_SYNC: "true"
@@ -67,33 +53,12 @@ jobs:
 
           # Map package name to working directory
           case "$PACKAGE" in
-            deepagents)
-              echo "working-dir=libs/deepagents" >> $GITHUB_OUTPUT
-              ;;
             rlmagents)
               echo "working-dir=libs/rlmagents" >> $GITHUB_OUTPUT
               ;;
-            rlmagents-cli)
-              echo "working-dir=libs/cli" >> $GITHUB_OUTPUT
-              ;;
-            deepagents-acp)
-              echo "working-dir=libs/acp" >> $GITHUB_OUTPUT
-              ;;
-            deepagents-harbor)
-              echo "working-dir=libs/harbor" >> $GITHUB_OUTPUT
-              ;;
-            langchain-daytona)
-              echo "working-dir=libs/partners/daytona" >> $GITHUB_OUTPUT
-              ;;
-            langchain-modal)
-              echo "working-dir=libs/partners/modal" >> $GITHUB_OUTPUT
-              ;;
-            langchain-runloop)
-              echo "working-dir=libs/partners/runloop" >> $GITHUB_OUTPUT
-              ;;
             *)
               echo "Error: Unknown package '$PACKAGE'"
-              echo "Valid packages are: deepagents, rlmagents, rlmagents-cli, deepagents-acp, deepagents-harbor, langchain-daytona, langchain-modal, langchain-runloop"
+              echo "Valid package is: rlmagents"
               exit 1
               ;;
           esac
@@ -328,7 +293,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          path: deepagents
+          path: repo
           sparse-checkout: |
             ${{ env.WORKING_DIR }}
           ref: ${{ github.ref }}
@@ -337,7 +302,7 @@ jobs:
       - name: Check tags
         id: check-tags
         shell: bash
-        working-directory: deepagents/${{ env.WORKING_DIR }}
+        working-directory: repo/${{ env.WORKING_DIR }}
         env:
           PKG_NAME: ${{ needs.build.outputs.pkg-name }}
           VERSION: ${{ needs.build.outputs.version }}
@@ -347,7 +312,7 @@ jobs:
 
       - name: Generate release body
         id: generate-release-body
-        working-directory: deepagents
+        working-directory: repo
         env:
           PKG_NAME: ${{ needs.build.outputs.pkg-name }}
           VERSION: ${{ needs.build.outputs.version }}
@@ -515,24 +480,6 @@ jobs:
           name: dist
           path: ${{ env.WORKING_DIR }}/dist/
 
-      - name: Verify CLI pins latest rlmagents version
-        if: needs.build.outputs.pkg-name == 'rlmagents-cli' && !inputs.dangerous-skip-sdk-pin-check
-        run: |
-          RLMAGENTS_VERSION=$(grep -Po '(?<=^version = ")[^"]*' libs/rlmagents/pyproject.toml)
-          CLI_RLMAGENTS_PIN=$(grep -Po '(?<=rlmagents==)[0-9]+\.[0-9]+\.[0-9]+' libs/cli/pyproject.toml)
-
-          if [ "$RLMAGENTS_VERSION" != "$CLI_RLMAGENTS_PIN" ]; then
-            echo "::error::CLI rlmagents pin does not match rlmagents version!"
-            echo "rlmagents version (libs/rlmagents/pyproject.toml): $RLMAGENTS_VERSION"
-            echo "CLI rlmagents pin (libs/cli/pyproject.toml): $CLI_RLMAGENTS_PIN"
-            echo ""
-            echo "Update the rlmagents dependency in libs/cli/pyproject.toml to rlmagents==$RLMAGENTS_VERSION"
-            echo "Or re-run with 'dangerous-skip-sdk-pin-check' enabled to bypass."
-            exit 1
-          else
-            echo "CLI rlmagents pin matches rlmagents version: $RLMAGENTS_VERSION"
-          fi
-
       - name: Import dist package
         shell: bash
         working-directory: ${{ env.WORKING_DIR }}
@@ -611,20 +558,19 @@ jobs:
           if-no-files-found: ignore
 
       - name: Run integration tests
-        # Only run integration tests if they exist (currently only for deepagents package)
-        if: false # Temporarily disabled
+        # Integration tests are temporarily disabled while they are stabilized
+        if: false
         run: make integration_test || echo "No integration tests found, skipping..."
         working-directory: ${{ env.WORKING_DIR }}
 
   publish:
     # Publishes the package to PyPI
-    # Skipped for CLI - PyPI publish happens via publish.yml when draft is published
     needs:
       - setup
       - build
       - test-pypi-publish
       - pre-release-checks
-    if: needs.build.outputs.pkg-name != 'rlmagents-cli'
+    if: needs.pre-release-checks.result == 'success' && needs.test-pypi-publish.result == 'success'
     runs-on: [self-hosted, Linux]
     permissions:
       # This permission is used for trusted publishing:
@@ -669,8 +615,7 @@ jobs:
           attestations: false
 
   # Create GitHub release after checks pass
-  # For CLI: creates a DRAFT release (user edits notes, then publishes to trigger PyPI upload)
-  # For other packages: creates a published release (PyPI upload already done)
+  # Creates the final GitHub release with attached package artifacts
   mark-release:
     needs:
       - setup
@@ -722,9 +667,8 @@ jobs:
           tag: ${{ needs.build.outputs.pkg-name }}==${{ needs.build.outputs.version }}
           body: ${{ needs.release-notes.outputs.release-body }}
           commit: ${{ github.sha }}
-          makeLatest: ${{ needs.build.outputs.pkg-name == 'deepagents' }}
-          # CLI uses draft releases for manual review before PyPI publish
-          draft: ${{ needs.build.outputs.pkg-name == 'rlmagents-cli' }}
+          makeLatest: false
+          draft: false
 
       # Mark the release PR as tagged so release-please knows it's been released
       # This is required because skip-github-release is true in release-please config

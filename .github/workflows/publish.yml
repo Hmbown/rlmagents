@@ -1,10 +1,10 @@
-# Publishes CLI package to PyPI when a draft GitHub release is published.
+# Publishes rlmagents package artifacts to PyPI when a GitHub release is published.
 #
-# This enables human-in-the-loop release notes editing:
-# 1. release.yml creates a DRAFT release with auto-generated notes
+# This enables human-in-the-loop publication for any release flow that publishes GitHub assets:
+# 1. release.yml can create a release with auto-generated notes
 # 2. Maintainer edits the release notes in GitHub UI
-# 3. Maintainer clicks "Publish release"
-# 4. This workflow triggers and publishes to PyPI
+# 3. Maintainer clicks "Publish release" (or release is already published)
+# 4. This workflow triggers and publishes to PyPI from release assets
 
 name: "📦 Publish Release"
 run-name: "Publish ${{ github.event.release.tag_name }}"
@@ -18,9 +18,9 @@ permissions:
   id-token: write
 
 jobs:
-  publish-cli:
-    # Only run for CLI releases (tag format: rlmagents-cli==X.Y.Z)
-    if: startsWith(github.event.release.tag_name, 'rlmagents-cli==')
+  publish-release-artifacts:
+    # Keep env unset to support PyPI trusted-publishers configured as "Environment: Any".
+    if: startsWith(github.event.release.tag_name, 'rlmagents==')
     runs-on: [self-hosted, Linux]
 
     steps:

@@ -61,6 +61,109 @@ uv run harbor run --agent-import-path deepagents_harbor:DeepAgentsWrapper \
   --dataset terminal-bench@2.0 -n 10 --jobs-dir jobs/terminal-bench --env daytona
 ```
 
+## Terminal Bench + DeepSeek and Minimax
+
+Set up model credentials and optional custom providers first:
+
+```bash
+export DEEPSEEK_API_KEY="<deepseek-key>"
+export DEEPSEEK_BASE_URL="https://api.deepseek.com"  # optional, overrides default
+export MINIMAX_API_KEY="<minimax-key>"              # only if running minimax
+
+mkdir -p ~/.rlmagents
+cat > ~/.rlmagents/config.toml <<'EOF'
+[models]
+
+[models.providers.minimax]
+models = ["minimax-m2.5"]
+api_key_env = "MINIMAX_API_KEY"
+base_url = "https://api.minimaxi.chat/v1"
+# Minimax is OpenAI-compatible in this setup.
+class_path = "langchain_openai.ChatOpenAI"
+
+[models.providers.minimax.params]
+temperature = 0
+EOF
+```
+
+Optional: confirm DeepSeek model IDs that your API key can use:
+
+```bash
+curl -sS -H "Authorization: Bearer ${DEEPSEEK_API_KEY}" https://api.deepseek.com/models
+```
+
+Typical IDs available for this API key are:
+
+```text
+deepseek-chat
+deepseek-reasoner
+```
+
+Run a short test with DeepSeek Reasoner:
+
+```bash
+cd libs/harbor
+uv run harbor run \
+  --agent-import-path deepagents_harbor:DeepAgentsWrapper \
+  --model deepseek:deepseek-reasoner \
+  --dataset terminal-bench@2.0 \
+  --task-name chess-best-move \
+  -n 1 \
+  --jobs-dir jobs/terminal-bench-smoke-reasoner \
+  --env docker
+```
+
+Run direct model comparison with the DeepSeek reasoner model:
+
+```bash
+cd libs/harbor
+uv run harbor run \
+  --agent-import-path deepagents_harbor:DeepAgentsWrapper \
+  --model deepseek:deepseek-reasoner \
+  --model minimax:minimax-m2.5 \
+  --dataset terminal-bench@2.0 \
+  -n 1 \
+  --jobs-dir jobs/terminal-bench-comparison \
+  --env docker
+```
+
+If you want to verify available DeepSeek models for your account, run the API check above and use one of those model IDs in the `--model` flag.
+
+If model init fails, check `jobs/<run-dir>/<timestamp>/<trial>/trial.log` for root cause before retrying.
+
+### Quick result comparison
+
+After two model runs complete, compare terminal-bench rewards side-by-side:
+
+```bash
+python - <<'PY'
+import json
+from pathlib import Path
+
+for run_dir in sorted(Path("jobs").glob("terminal-bench-*/*")):
+    rewards = {}
+    for result_path in run_dir.glob("**/result.json"):
+        data = json.loads(result_path.read_text())
+        config = data.get("config", {})
+        agent_info = config.get("agent", {})
+        agent = agent_info.get("model_name") or "unknown"
+        verifier_result = data.get("verifier_result") or {}
+        reward = verifier_result.get("rewards", {}).get("reward")
+        rewards.setdefault(agent, []).append(reward)
+
+    if not rewards:
+        continue
+
+    print(f"\\n{run_dir}")
+    for model, rows in sorted(rewards.items(), key=lambda item: str(item[0])):
+        vals = [r for r in rows if isinstance(r, (int, float))]
+        avg = sum(vals) / len(vals) if vals else None
+        ok = sum(1 for r in rows if r == 1.0)
+        total = len(rows)
+        print(f"  {model}: {ok}/{total} full rewards (avg={avg})")
+PY
+```
+
 ## LangSmith Integration
 
 LangSmith provides tracing and observability for agent runs. The workflow:

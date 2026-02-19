@@ -3967,7 +3967,7 @@ wheels = [
 
 [[package]]
 name = "rlmagents"
-version = "0.0.1"
+version = "0.0.2"
 source = { editable = "../rlmagents" }
 dependencies = [
     { name = "langchain" },

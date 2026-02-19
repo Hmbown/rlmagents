@@ -1,8 +1,8 @@
 # RLMAgents CLI
 
-[![PyPI - Version](https://img.shields.io/pypi/v/rlmagents-cli?label=%20)](https://pypi.org/project/rlmagents-cli/)
-[![PyPI - License](https://img.shields.io/pypi/l/rlmagents-cli)](https://opensource.org/licenses/MIT)
-[![PyPI - Downloads](https://img.shields.io/pepy/dt/rlmagents-cli)](https://pypistats.org/packages/rlmagents-cli)
+[![CI](https://github.com/Hmbown/rlmagents/actions/workflows/ci.yml/badge.svg)](https://github.com/Hmbown/rlmagents/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 
 `rlmagents-cli` is the terminal interface for `rlmagents`: interactive agent execution with
 planning, filesystem tools, shell execution, sub-agents, and the full RLM context toolchain.

@@ -1,13 +1,14 @@
 # Main CI workflow for RLMAgents monorepo
 #
-# Runs on every pull request:
+# Runs on every pull request and push to main:
+# - Lockfile verification
 # - Linting for changed packages
 # - Unit tests for changed packages
 #
 # Only packages with changes are tested. Workflow/action changes run full CI.
 # Pushes to main run full CI.
 
-name: "🔧 CI"
+name: "CI"
 
 on:
   push:
@@ -28,20 +29,29 @@ env:
   UV_NO_SYNC: "true"
 
 jobs:
+  # Verify all lockfiles are up-to-date (runs in parallel with change detection)
+  lockfiles:
+    name: "Lockfiles"
+    runs-on: [self-hosted, Linux]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - uses: "./.github/actions/uv_setup"
+        with:
+          python-version: "3.12"
+      - run: make lock-check
+
   # Detect which packages have changes
   changes:
-    name: "🔍 Detect Changes"
+    name: "Detect Changes"
     runs-on: [self-hosted, Linux]
     outputs:
       cli: ${{ steps.filter.outputs.cli }}
       rlmagents: ${{ steps.filter.outputs.rlmagents }}
       acp: ${{ steps.filter.outputs.acp }}
     steps:
-      - name: "📋 Checkout Code"
-        uses: actions/checkout@v6
-
-      - name: "🔍 Check for changes"
-        uses: dorny/paths-filter@v3
+      - uses: actions/checkout@v6
+      - uses: dorny/paths-filter@v3
         id: filter
         with:
           filters: |
@@ -60,7 +70,7 @@ jobs:
               - ".github/actions/**"
 
   lint-cli:
-    name: "🧹 Lint cli"
+    name: "Lint cli"
     needs: changes
     if: needs.changes.outputs.cli == 'true' || github.event_name == 'push'
     uses: ./.github/workflows/_lint.yml
@@ -69,7 +79,7 @@ jobs:
       python-version: "3.11"
 
   test-cli:
-    name: "🧪 Test cli"
+    name: "Test cli"
     needs: changes
     if: needs.changes.outputs.cli == 'true' || github.event_name == 'push'
     strategy:
@@ -82,32 +92,27 @@ jobs:
       python-version: ${{ matrix.python-version }}
 
   lint-rlmagents:
-    name: "🧹 Lint rlmagents"
+    name: "Lint rlmagents"
     needs: changes
     if: needs.changes.outputs.rlmagents == 'true' || github.event_name == 'push'
     runs-on: [self-hosted, Linux]
     timeout-minutes: 20
     steps:
-      - name: "📋 Checkout Code"
-        uses: actions/checkout@v6
-
-      - name: "🐍 Set up Python + UV"
-        uses: "./.github/actions/uv_setup"
+      - uses: actions/checkout@v6
+      - uses: "./.github/actions/uv_setup"
         with:
           python-version: "3.11"
           cache-suffix: lint-libs/rlmagents
           working-directory: "libs/rlmagents"
-
-      - name: "📦 Install Test Dependencies"
+      - name: "Install Dependencies"
         working-directory: "libs/rlmagents"
         run: uv sync --group test --locked
-
-      - name: "🔍 Run Ruff"
+      - name: "Ruff"
         working-directory: "libs/rlmagents"
         run: uv run ruff check rlmagents tests
 
   test-rlmagents:
-    name: "🧪 Test rlmagents"
+    name: "Test rlmagents"
     needs: changes
     if: needs.changes.outputs.rlmagents == 'true' || github.event_name == 'push'
     strategy:
@@ -117,25 +122,19 @@ jobs:
     runs-on: [self-hosted, Linux]
     timeout-minutes: 30
     steps:
-      - name: "📋 Checkout Code"
-        uses: actions/checkout@v6
-
-      - name: "🐍 Set up Python ${{ matrix.python-version }} + UV"
-        uses: "./.github/actions/uv_setup"
+      - uses: actions/checkout@v6
+      - uses: "./.github/actions/uv_setup"
         with:
           python-version: ${{ matrix.python-version }}
           cache-suffix: test-libs/rlmagents
           working-directory: "libs/rlmagents"
-
-      - name: "📦 Install Test Dependencies"
+      - name: "Install Dependencies"
         working-directory: "libs/rlmagents"
         run: uv sync --group test --locked
-
-      - name: "🧪 Run Tests"
+      - name: "Tests"
         working-directory: "libs/rlmagents"
         run: uv run pytest tests -q
-
-      - name: "🧹 Verify Clean Working Directory"
+      - name: "Verify Clean Working Directory"
         shell: bash
         run: |
           set -eu
@@ -143,55 +142,47 @@ jobs:
           echo "$STATUS"
           echo "$STATUS" | grep 'nothing to commit, working tree clean'
 
-  test-acp-allowlist:
-    name: "🧪 Test acp allowlist"
+  test-acp:
+    name: "Test acp"
     needs: changes
     if: needs.changes.outputs.acp == 'true' || github.event_name == 'push'
     runs-on: [self-hosted, Linux]
     timeout-minutes: 10
     steps:
-      - name: "📋 Checkout Code"
-        uses: actions/checkout@v6
-
-      - name: "🐍 Set up Python + UV"
-        uses: "./.github/actions/uv_setup"
+      - uses: actions/checkout@v6
+      - uses: "./.github/actions/uv_setup"
         with:
           python-version: "3.12"
           cache-suffix: test-libs/acp
           working-directory: "libs/acp"
-
-      - name: "📦 Install Test Dependencies"
+      - name: "Install Dependencies"
         working-directory: "libs/acp"
         run: uv sync --group test --locked
-
-      - name: "🧪 Run allowlist test"
+      - name: "Tests"
         working-directory: "libs/acp"
         run: uv run pytest tests/test_command_allowlist.py -q
 
-  # Final status check - ensures all jobs passed
-  ci_success:
-    name: "✅ CI Success"
+  # Final status gate - ensures all jobs passed
+  ci-pass:
+    name: "CI"
     needs:
+      - lockfiles
       - changes
       - lint-cli
       - test-cli
       - lint-rlmagents
       - test-rlmagents
-      - test-acp-allowlist
+      - test-acp
     if: always()
     runs-on: [self-hosted, Linux]
     steps:
-      - name: "🎉 All Checks Passed"
+      - name: "Check Results"
         run: |
-          # Get all job results (excluding 'changes' which always succeeds)
           results='${{ toJSON(needs.*.result) }}'
           echo "Job results: $results"
-
-          # Check for failures or cancellations
           if echo "$results" | grep -qE '"failure"|"cancelled"'; then
             echo "Some jobs failed or were cancelled"
             exit 1
           fi
-
           echo "All required checks passed (skipped jobs are OK)"
           exit 0

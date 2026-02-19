@@ -678,7 +678,7 @@ wheels = [
 
 [[package]]
 name = "deepagents-harbor"
-version = "0.0.1"
+version = "0.0.2"
 source = { editable = "." }
 dependencies = [
     { name = "harbor" },
@@ -3051,7 +3051,7 @@ wheels = [
 
 [[package]]
 name = "rlmagents"
-version = "0.0.1"
+version = "0.0.2"
 source = { editable = "../rlmagents" }
 dependencies = [
     { name = "langchain" },

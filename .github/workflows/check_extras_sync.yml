@@ -25,7 +25,7 @@ permissions:
 jobs:
   check-extras-sync:
     name: "Verify extras match required deps"
-    runs-on: [self-hosted, Linux]
+    runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
       - name: "📋 Checkout Code"

@@ -109,18 +109,18 @@ jobs:
 
       - name: Check version
         id: check-version
-        shell: python
         working-directory: ${{ env.WORKING_DIR }}
         run: |
-          import os
-          import tomllib
-          with open("pyproject.toml", "rb") as f:
+          uv run python -c "
+          import os, tomllib
+          with open('pyproject.toml', 'rb') as f:
               data = tomllib.load(f)
-          pkg_name = data["project"]["name"]
-          version = data["project"]["version"]
-          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
-              f.write(f"pkg-name={pkg_name}\n")
-              f.write(f"version={version}\n")
+          pkg_name = data['project']['name']
+          version = data['project']['version']
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write(f'pkg-name={pkg_name}\n')
+              f.write(f'version={version}\n')
+          "
 
   # Collect contributors from merged PRs for release shoutouts
   collect-contributors:

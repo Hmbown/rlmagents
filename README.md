@@ -41,44 +41,6 @@ RLMAgents also adds implementation layers that are not part of the paper's core 
 If one of these extension features fails, treat it as an RLMAgents implementation issue,
 not user error and not a failure of the base RLM paper design.
 
-## What RLMAgents adds (vs Deep Agents)
-
-- First-class RLM toolchain (contexts, evidence, sub-queries, recipes)
-- Session serialization (“memory packs”) for resumable work
-- `rlmagents-cli`: terminal UI for threads, approvals, skills, and memory
-- Opinionated smoke scenarios for harness behavior
-
-## Practical Value Assessment
-
-After comprehensive testing, the RLM features provide genuine value for research and analysis workflows:
-
-### ✅ Context Isolation
-- **Tested**: Loaded multiple documents into separate contexts, performed cross-context searches
-- **Value**: Enables parallel analysis of large documents without polluting conversation context
-- **Use case**: Research papers, codebases, logs analyzed side-by-side
-
-### ✅ Evidence Tracking & Provenance
-- **Tested**: All searches, Python executions, and manual citations automatically tracked
-- **Value**: Provides verifiable audit trail for findings; essential for research documentation
-- **Use case**: Academic research, legal analysis, audit compliance
-
-### ✅ Python REPL with 100+ Helpers
-- **Tested**: Used built-in functions (search, extract_numbers, word_count, cite) for data analysis
-- **Value**: Enables complex data manipulation beyond LLM capabilities; sandboxed for safety
-- **Use case**: Data extraction, statistical analysis, text processing, CSV/JSON parsing
-
-### ✅ Structured Reasoning Workflow
-- **Tested**: Used think → evaluate → finalize workflow for systematic analysis
-- **Value**: Reduces ad-hoc prompting; provides confidence tracking and progress assessment
-- **Use case**: Complex problem-solving, research synthesis, decision support
-
-### ✅ Recipe Pipelines
-- **Examined**: Declarative multi-step workflows with budget controls
-- **Value**: Enables repeatable analysis pipelines; manages token usage and costs
-- **Use case**: Batch processing, ETL workflows, automated reporting
-
-**Assessment summary**: RLM features are helpful for research, data analysis, and complex reasoning tasks. In this implementation, they provide a systematic and verifiable workflow with different tradeoffs than baseline agent loops.
-
 ## Monorepo Packages
 
 - `libs/rlmagents` — core Python harness (`rlmagents`)
@@ -110,6 +72,8 @@ result = agent.invoke(
 ## Quickstart (CLI)
 
 ```bash
+pip install rlmagents-cli
+# or
 uv tool install rlmagents-cli
 rlmagents
 ```

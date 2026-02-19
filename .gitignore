@@ -224,3 +224,9 @@ libs/cli/TEXTUAL_PROGRESS.md
 
 CLAUDE.md
 .env.runner
+
+# Local RLM analysis artifacts
+2512.24601v2.pdf
+aleph/
+libs/harbor/jobs/
+libs/rlmagents/evals/

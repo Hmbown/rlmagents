@@ -76,6 +76,20 @@ jobs:
 
       - name: Publish to PyPI
         shell: bash
+        env:
+          PYPI_API_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+          PYPI_TOKEN: ${{ secrets.PYPI_TOKEN }}
         run: |
           set -eu
-          uv publish dist/* --trusted-publishing always --check-url https://pypi.org/simple/
+          TOKEN="${PYPI_API_TOKEN:-}"
+          if [ -z "$TOKEN" ]; then
+            TOKEN="${PYPI_TOKEN:-}"
+          fi
+
+          if [ -n "$TOKEN" ]; then
+            echo "Using API token fallback for publish."
+            uv publish dist/* --token "$TOKEN" --check-url https://pypi.org/simple/
+          else
+            echo "No API token found, using trusted publishing."
+            uv publish dist/* --trusted-publishing always --check-url https://pypi.org/simple/
+          fi

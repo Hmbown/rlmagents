@@ -8,7 +8,7 @@ jobs:
   label-by-package:
     permissions:
       issues: write
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux]
 
     steps:
       - name: Sync package labels

@@ -406,6 +406,7 @@ jobs:
       - pre-release-checks
     runs-on: [self-hosted, Linux]
     permissions:
+      contents: read
       # This permission is used for trusted publishing:
       # https://blog.pypi.org/posts/2023-04-20-introducing-trusted-publishers/
       #
@@ -573,6 +574,7 @@ jobs:
     if: needs.pre-release-checks.result == 'success' && needs.test-pypi-publish.result == 'success'
     runs-on: [self-hosted, Linux]
     permissions:
+      contents: read
       # This permission is used for trusted publishing:
       # https://blog.pypi.org/posts/2023-04-20-introducing-trusted-publishers/
       #

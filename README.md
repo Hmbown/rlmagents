@@ -35,29 +35,9 @@ Python REPL, and recipe pipelines. Design follows the
 | `libs/acp` | `deepagents-acp` | Agent Context Protocol integration (e.g. Zed) |
 | `libs/harbor` | `deepagents-harbor` | Evaluation framework (Terminal Bench, Harbor) |
 
-## Quickstart (SDK)
+## Quickstart
 
-```bash
-pip install rlmagents
-# or
-uv add rlmagents
-```
-
-```python
-from rlmagents import create_rlm_agent
-
-agent = create_rlm_agent()
-result = agent.invoke(
-    {
-        "messages": [
-            {"role": "user", "content": "Summarize the key ideas in this paper."}
-        ]
-    }
-)
-```
-
-## Quickstart (CLI)
-
+Use the `rlmagents` command as the default way to run the project.
 Run from this repository:
 
 ```bash
@@ -65,7 +45,7 @@ uv run --project libs/cli rlmagents
 ```
 
 ```bash
-# Non-interactive one-shot
+# One-shot prompt
 rlmagents -n "Summarize the repository architecture"
 
 # Resume last conversation
@@ -79,6 +59,21 @@ rlmagents skills list
 The CLI supports interactive and non-interactive modes, conversation threads,
 human-in-the-loop approval, remote sandbox backends, and persistent memory
 via `.rlmagents/`.
+
+If you need to embed RLMAgents in Python code, use the core API:
+
+```python
+from rlmagents import create_rlm_agent
+
+agent = create_rlm_agent()
+result = agent.invoke(
+    {
+        "messages": [
+            {"role": "user", "content": "Summarize the key ideas in this paper."}
+        ]
+    }
+)
+```
 
 ## Paper alignment
 

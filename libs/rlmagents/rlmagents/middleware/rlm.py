@@ -152,6 +152,13 @@ class RLMMiddleware(AgentMiddleware):
         *,
         sandbox_timeout: float = 180.0,
         context_policy: str = "trusted",
+        hist_max_entries: int = 64,
+        hist_max_code_chars: int = 280,
+        hist_max_text_chars: int = 200,
+        enable_final_sentinel: bool = False,
+        inject_exec_metadata: bool = True,
+        inject_exec_metadata_max_entries: int = 4,
+        inject_exec_metadata_max_chars: int = 1200,
         auto_load_threshold: int = 10_000,
         auto_load_preview_chars: int = 600,
         tool_profile: RLMToolProfile = DEFAULT_RLM_TOOL_PROFILE,
@@ -166,7 +173,14 @@ class RLMMiddleware(AgentMiddleware):
             context_policy=context_policy,
             sub_query_model=sub_query_model,  # type: ignore[arg-type]
             sub_query_timeout=sub_query_timeout,
+            hist_max_entries=hist_max_entries,
+            hist_max_code_chars=hist_max_code_chars,
+            hist_max_text_chars=hist_max_text_chars,
+            enable_final_sentinel=enable_final_sentinel,
         )
+        self._inject_exec_metadata = inject_exec_metadata
+        self._inject_exec_metadata_max_entries = max(1, inject_exec_metadata_max_entries)
+        self._inject_exec_metadata_max_chars = max(200, inject_exec_metadata_max_chars)
         self._auto_load_threshold = auto_load_threshold
         self._auto_load_preview_chars = max(auto_load_preview_chars, 0)
         self._custom_prompt = system_prompt
@@ -197,6 +211,15 @@ class RLMMiddleware(AgentMiddleware):
         except RuntimeError:
             return
         self._manager.set_loop(loop)
+
+    def _exec_metadata_note(self) -> str | None:
+        if not self._inject_exec_metadata:
+            return None
+        note = self._manager.format_recent_exec_metadata(
+            limit=self._inject_exec_metadata_max_entries,
+            max_chars=self._inject_exec_metadata_max_chars,
+        )
+        return note or None
 
     def _auto_load_cli_file_mentions(self, request: ModelRequest) -> str | None:
         """Load CLI `@file` mentions into RLM contexts for the latest user turn."""
@@ -272,6 +295,9 @@ class RLMMiddleware(AgentMiddleware):
         auto_load_note = self._auto_load_cli_file_mentions(request)
         if auto_load_note:
             system_message = _append_to_system_message(system_message, auto_load_note)
+        exec_metadata_note = self._exec_metadata_note()
+        if exec_metadata_note:
+            system_message = _append_to_system_message(system_message, exec_metadata_note)
         if system_message is not request.system_message:
             request = request.override(system_message=system_message)
         return handler(request)
@@ -289,6 +315,9 @@ class RLMMiddleware(AgentMiddleware):
         auto_load_note = self._auto_load_cli_file_mentions(request)
         if auto_load_note:
             system_message = _append_to_system_message(system_message, auto_load_note)
+        exec_metadata_note = self._exec_metadata_note()
+        if exec_metadata_note:
+            system_message = _append_to_system_message(system_message, exec_metadata_note)
         if system_message is not request.system_message:
             request = request.override(system_message=system_message)
         return await handler(request)

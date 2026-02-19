@@ -73,13 +73,14 @@ if TYPE_CHECKING:
     from langchain_core.runnables import RunnableConfig
     from langgraph.checkpoint.base import BaseCheckpointSaver
     from langgraph.pregel import Pregel
-    from rlmagents._harness.backends import CompositeBackend
-    from rlmagents._harness.backends.protocol import SandboxBackendProtocol
     from textual.app import ComposeResult
     from textual.events import Click, MouseUp, Resize
     from textual.scrollbar import ScrollUp
     from textual.widget import Widget
     from textual.worker import Worker
+
+    from rlmagents._harness.backends import CompositeBackend
+    from rlmagents._harness.backends.protocol import SandboxBackendProtocol
 
 # iTerm2 Cursor Guide Workaround
 # ===============================
@@ -405,6 +406,7 @@ class DeepAgentsApp(App):
         tools: list[Callable[..., Any] | dict[str, Any]] | None = None,
         sandbox: SandboxBackendProtocol | None = None,
         sandbox_type: str | None = None,
+        rlm_config: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> None:
         """Initialize the RLMAgents application.
@@ -422,6 +424,7 @@ class DeepAgentsApp(App):
             tools: Tools used to create the agent (for model hot-swap)
             sandbox: Sandbox backend (for model hot-swap)
             sandbox_type: Type of sandbox provider (for model hot-swap)
+            rlm_config: Optional RLM override kwargs for model hot-swap.
             **kwargs: Additional arguments passed to parent
         """
         super().__init__(**kwargs)
@@ -439,6 +442,7 @@ class DeepAgentsApp(App):
         self._tools = tools or []
         self._sandbox = sandbox
         self._sandbox_type = sandbox_type
+        self._rlm_config = rlm_config
         self._status_bar: StatusBar | None = None
         self._chat_input: ChatInput | None = None
         self._quit_pending = False
@@ -1956,6 +1960,7 @@ class DeepAgentsApp(App):
                 sandbox_type=self._sandbox_type,
                 auto_approve=self._auto_approve,
                 checkpointer=self._checkpointer,
+                rlm_config=self._rlm_config,
             )
         except Exception as e:
             # Roll back settings so the running agent isn't misrepresented.
@@ -2060,6 +2065,7 @@ async def run_textual_app(
     tools: list[Callable[..., Any] | dict[str, Any]] | None = None,
     sandbox: SandboxBackendProtocol | None = None,
     sandbox_type: str | None = None,
+    rlm_config: dict[str, Any] | None = None,
 ) -> int:
     """Run the Textual application.
 
@@ -2076,6 +2082,7 @@ async def run_textual_app(
         tools: Tools used to create the agent (for model hot-swap)
         sandbox: Sandbox backend (for model hot-swap)
         sandbox_type: Type of sandbox provider (for model hot-swap)
+        rlm_config: Optional RLM override kwargs used for model hot-swap.
 
     Returns:
         The app's return code (0 for success, non-zero for error).
@@ -2093,6 +2100,7 @@ async def run_textual_app(
         tools=tools,
         sandbox=sandbox,
         sandbox_type=sandbox_type,
+        rlm_config=rlm_config,
     )
     await app.run_async()
     return app.return_code or 0

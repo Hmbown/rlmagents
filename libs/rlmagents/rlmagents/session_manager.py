@@ -127,6 +127,10 @@ class RLMSessionManager:
         sub_query_max_tokens: int = 4096,
         context_token_threshold: int = 20_000,
         context_iteration_threshold: int = 100,
+        hist_max_entries: int = 64,
+        hist_max_code_chars: int = 280,
+        hist_max_text_chars: int = 200,
+        enable_final_sentinel: bool = False,
     ) -> None:
         self.sandbox_config = sandbox_config or SandboxConfig()
         self.context_policy = context_policy
@@ -135,6 +139,10 @@ class RLMSessionManager:
         self._sub_query_max_tokens = sub_query_max_tokens
         self._context_token_threshold = context_token_threshold
         self._context_iteration_threshold = context_iteration_threshold
+        self._hist_max_entries = max(1, hist_max_entries)
+        self._hist_max_code_chars = max(40, hist_max_code_chars)
+        self._hist_max_text_chars = max(40, hist_max_text_chars)
+        self.enable_final_sentinel = enable_final_sentinel
         self._loop = _running_loop_or_none()
         self.sessions: dict[str, Session] = {}
 
@@ -183,8 +191,12 @@ class RLMSessionManager:
             line_number_base=line_number_base,
             context_token_threshold=self._context_token_threshold,
             context_iteration_threshold=self._context_iteration_threshold,
+            max_hist_entries=self._hist_max_entries,
+            max_hist_code_chars=self._hist_max_code_chars,
+            max_hist_text_chars=self._hist_max_text_chars,
         )
         self._inject_sub_query(session, context_id)
+        self._sync_session_runtime_vars(session)
         self.sessions[context_id] = session
         return meta
 
@@ -194,6 +206,12 @@ class RLMSessionManager:
         """Recompute context metadata from the live REPL context."""
         context_text = _coerce_context_to_text(session.repl.get_variable("ctx"))
         session.meta = _analyze_text_context(context_text, session.meta.format.value)
+
+    def _sync_session_runtime_vars(self, session: Session) -> None:
+        """Mirror manager-maintained artifacts into the REPL namespace."""
+        session.repl.set_variable("hist", [dict(item) for item in session.hist])
+        if session.repl.get_variable("Final") is None:
+            session.repl.set_variable("Final", None)
 
     # -- Context-pressure policy --------------------------------------------
 
@@ -347,6 +365,97 @@ class RLMSessionManager:
             session.think_history.append(f"Auto-pressure event triggered: {source_op}")
         return self._compact_session(context_id, session)
 
+    def append_hist_entry(
+        self,
+        context_id: str,
+        entry: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        """Append a bounded root-loop history entry for a context."""
+        session = self.get_session(context_id)
+        if session is None:
+            return None
+        normalized = session.append_hist(entry)
+        self._sync_session_runtime_vars(session)
+        return normalized
+
+    def get_recent_hist_entries(
+        self,
+        *,
+        limit: int = 4,
+    ) -> list[dict[str, Any]]:
+        """Return recent history entries across sessions (newest first)."""
+        if limit <= 0:
+            return []
+        entries: list[dict[str, Any]] = []
+        for context_id, session in self.sessions.items():
+            for item in session.hist:
+                enriched = dict(item)
+                enriched.setdefault("context_id", context_id)
+                entries.append(enriched)
+
+        def _sort_key(item: dict[str, Any]) -> tuple[str, int]:
+            timestamp = item.get("timestamp")
+            ts = timestamp if isinstance(timestamp, str) else ""
+            iteration = item.get("iteration")
+            it = int(iteration) if isinstance(iteration, int) else 0
+            return (ts, it)
+
+        entries.sort(key=_sort_key, reverse=True)
+        return entries[:limit]
+
+    def format_recent_exec_metadata(
+        self,
+        *,
+        limit: int = 4,
+        max_chars: int = 1200,
+    ) -> str:
+        """Build a bounded root-loop execution metadata summary for model context."""
+        entries = self.get_recent_hist_entries(limit=limit)
+        if not entries:
+            return ""
+
+        lines = ["[RLM per-iteration execution metadata]"]
+        for item in entries:
+            context_id = str(item.get("context_id", "default"))
+            iteration = item.get("iteration", "?")
+            status = "error" if item.get("error") else "ok"
+            stdout_chars = int(item.get("stdout_chars") or 0)
+            stderr_chars = int(item.get("stderr_chars") or 0)
+            duration = item.get("execution_time_ms")
+            duration_label = (
+                f"{float(duration):.1f}ms"
+                if isinstance(duration, (int, float))
+                else "n/a"
+            )
+            vars_updated = int(item.get("variables_updated_count") or 0)
+            final_set = bool(item.get("final_set"))
+            code_preview = str(item.get("code_preview") or "")
+            line = (
+                f"- {context_id}#{iteration} exec_python {status}; "
+                f"stdout={stdout_chars}, stderr={stderr_chars}, vars={vars_updated}, "
+                f"t={duration_label}, final={'set' if final_set else 'unset'}; "
+                f"code={code_preview!r}"
+            )
+            lines.append(line)
+
+        text = "\n".join(lines)
+        if max_chars <= 0 or len(text) <= max_chars:
+            return text
+        suffix = "\n... [metadata truncated]"
+        keep = max(max_chars - len(suffix), 0)
+        return text[:keep] + suffix
+
+    def consume_final_sentinel(self, context_id: str) -> str | None:
+        """Return and clear REPL `Final` sentinel value for a context."""
+        session = self.get_session(context_id)
+        if session is None:
+            return None
+        final_value = session.repl.get_variable("Final")
+        if final_value is None:
+            return None
+        session.repl.set_variable("Final", None)
+        return _coerce_context_to_text(final_value)
+
     def get_context_pressure_status(self, context_id: str) -> dict[str, object]:
         """Return compacted-state metadata for context status reporting."""
         session = self.get_session(context_id)
@@ -383,6 +492,7 @@ class RLMSessionManager:
                 "size_tokens_estimate": session.meta.size_tokens_estimate,
                 "iterations": session.iterations,
                 "evidence_count": len(session.evidence),
+                "hist_count": len(session.hist),
                 "task_count": len(session.tasks),
                 "compaction_count": session.compaction_count,
                 "context_pressure": {
@@ -450,7 +560,12 @@ class RLMSessionManager:
         session = _session_from_payload(payload, resolved_id, self.sandbox_config)
         session.context_token_threshold = self._context_token_threshold
         session.context_iteration_threshold = self._context_iteration_threshold
+        session.max_hist_entries = self._hist_max_entries
+        session.max_hist_code_chars = self._hist_max_code_chars
+        session.max_hist_text_chars = self._hist_max_text_chars
+        session._prune_hist()
         self._inject_sub_query(session, resolved_id)
+        self._sync_session_runtime_vars(session)
         self.sessions[resolved_id] = session
         return session.meta
 
@@ -463,7 +578,12 @@ class RLMSessionManager:
         resolved_id, session = load_session_from_file(path, self.sandbox_config, context_id)
         session.context_token_threshold = self._context_token_threshold
         session.context_iteration_threshold = self._context_iteration_threshold
+        session.max_hist_entries = self._hist_max_entries
+        session.max_hist_code_chars = self._hist_max_code_chars
+        session.max_hist_text_chars = self._hist_max_text_chars
+        session._prune_hist()
         self._inject_sub_query(session, resolved_id)
+        self._sync_session_runtime_vars(session)
         self.sessions[resolved_id] = session
         return session.meta
 

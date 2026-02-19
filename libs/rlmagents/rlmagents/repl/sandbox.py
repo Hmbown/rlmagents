@@ -441,6 +441,7 @@ class REPLEnvironment:
         self._namespace: dict[str, object] = {
             context_var_name: context,
             "__builtins__": builtins_dict,
+            "Final": None,
         }
 
         # Citation storage for provenance tracking
@@ -641,6 +642,11 @@ class REPLEnvironment:
             self._namespace[context_var_name] = text
             return text
 
+        def _set_final(value: object) -> object:
+            """Set the paper-style `Final` sentinel and return the assigned value."""
+            self._namespace["Final"] = value
+            return value
+
         helpers_ns: dict[str, object] = {
             "cite": _cite_and_store,
             "get_evidence": _get_evidence,
@@ -653,6 +659,7 @@ class REPLEnvironment:
             "sub_query_strict": _sub_query_strict,
             "ctx_append": _ctx_append,
             "ctx_set": _ctx_set,
+            "set_final": _set_final,
         }
 
         for name in CONTEXT_HELPER_NAMES:

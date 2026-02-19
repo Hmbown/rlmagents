@@ -536,6 +536,7 @@ async def run_non_interactive(
     harness: HarnessType = "rlmagents",
     model_name: str | None = None,
     model_params: dict[str, Any] | None = None,
+    rlm_config: dict[str, Any] | None = None,
     sandbox_type: str = "none",  # str (not None) to match argparse choices
     sandbox_id: str | None = None,
     sandbox_setup: str | None = None,
@@ -563,6 +564,7 @@ async def run_non_interactive(
         model_params: Extra kwargs from `--model-params` to pass to the model.
 
             These override config file values.
+        rlm_config: Optional RLM override kwargs forwarded to `create_cli_agent`.
         sandbox_type: Type of sandbox (`'none'`, `'modal'`,
             `'runloop'`, `'daytona'`, `'langsmith'`).
         sandbox_id: Optional existing sandbox ID to reuse.
@@ -660,6 +662,7 @@ async def run_non_interactive(
                 auto_approve=use_auto_approve,
                 enable_shell=enable_shell,
                 checkpointer=checkpointer,
+                rlm_config=rlm_config,
             )
 
             file_op_tracker = FileOpTracker(

@@ -284,8 +284,10 @@ class TestSandboxSetupForwarding:
 
             # Make the checkpointer async context manager return a mock
             mock_cp = MagicMock()
-            mock_checkpointer.return_value.__aenter__ = MagicMock(return_value=mock_cp)
-            mock_checkpointer.return_value.__aexit__ = MagicMock(return_value=None)
+            mock_checkpointer.return_value.__aenter__ = AsyncMock(
+                return_value=mock_cp
+            )
+            mock_checkpointer.return_value.__aexit__ = AsyncMock(return_value=None)
 
             # Make create_cli_agent return a mock agent that immediately finishes
             mock_agent = MagicMock()
@@ -300,6 +302,65 @@ class TestSandboxSetupForwarding:
 
         assert len(captured_kwargs) == 1
         assert captured_kwargs[0]["setup_script_path"] == "/path/to/setup.sh"
+
+
+class TestRlmConfigForwarding:
+    """Tests for forwarding `rlm_config` into create_cli_agent."""
+
+    @pytest.mark.asyncio
+    async def test_run_non_interactive_forwards_rlm_config(self) -> None:
+        """`run_non_interactive` should pass rlm_config to create_cli_agent."""
+        with (
+            patch(
+                "deepagents_cli.non_interactive.create_model",
+                return_value=ModelResult(
+                    model=MagicMock(),
+                    model_name="test-model",
+                    provider="test",
+                ),
+            ),
+            patch(
+                "deepagents_cli.non_interactive.generate_thread_id",
+                return_value="test-thread",
+            ),
+            patch(
+                "deepagents_cli.non_interactive.settings",
+            ) as mock_settings,
+            patch(
+                "deepagents_cli.non_interactive.build_langsmith_thread_url",
+                return_value=None,
+            ),
+            patch(
+                "deepagents_cli.non_interactive.get_checkpointer",
+            ) as mock_checkpointer,
+            patch(
+                "deepagents_cli.non_interactive.create_cli_agent",
+            ) as mock_create_agent,
+        ):
+            mock_settings.shell_allow_list = None
+            mock_settings.has_tavily = False
+            mock_settings.model_name = None
+
+            mock_cp = MagicMock()
+            mock_checkpointer.return_value.__aenter__ = AsyncMock(
+                return_value=mock_cp
+            )
+            mock_checkpointer.return_value.__aexit__ = AsyncMock(return_value=None)
+
+            mock_agent = MagicMock()
+            mock_agent.astream = MagicMock(return_value=_async_iter([]))
+            mock_create_agent.return_value = (mock_agent, MagicMock())
+
+            expected_config = {"rlm_enable_final_sentinel": True}
+            await run_non_interactive(
+                message="test",
+                quiet=True,
+                rlm_config=expected_config,
+            )
+
+        assert mock_create_agent.call_args is not None
+        kwargs = mock_create_agent.call_args.kwargs
+        assert kwargs["rlm_config"] == expected_config
 
 
 class TestQuietMode:

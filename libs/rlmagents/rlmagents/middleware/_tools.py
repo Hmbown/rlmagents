@@ -287,6 +287,42 @@ def _evidence_summary_lines(
     return parts
 
 
+def _render_final_report(
+    manager: RLMSessionManager,
+    *,
+    context_id: str,
+    answer: str,
+    confidence: str = "medium",
+    reasoning_summary: str = "",
+    completion_source: str = "finalize",
+) -> str:
+    """Render a final answer block shared by finalize and sentinel completion."""
+    session = manager.get_session(context_id)
+    parts = [f"## Final Answer\n\n{answer}"]
+    parts.append(f"\n**Confidence:** {confidence}")
+    parts.append(f"**Completion source:** {completion_source}")
+
+    if reasoning_summary:
+        parts.append(f"**Reasoning:** {reasoning_summary}")
+
+    if session:
+        parts.append(
+            f"\n**Analysis stats:** {session.iterations} iterations, "
+            f"{len(session.evidence)} evidence items, "
+            f"{len(session.think_history)} think steps, "
+            f"{len(session.hist)} hist entries"
+        )
+        if manager.get_context_pressure_status(context_id).get("compacted"):
+            compacted = manager.get_context_pressure_status(context_id)
+            parts.append(
+                f"**Context pressure:** compacted={compacted.get('compaction_count', 0)} "
+                f"(reason: {compacted.get('last_compaction_reason') or 'n/a'})"
+            )
+        parts.extend(_evidence_summary_lines(session.evidence))
+
+    return "\n".join(parts)
+
+
 def _record_evidence(
     manager: RLMSessionManager,
     session_id: str,
@@ -463,7 +499,8 @@ def _create_list_contexts_tool(manager: RLMSessionManager) -> BaseTool:
         for cid, info in sessions.items():
             lines.append(
                 f"- {cid}: {info['format']}, {info['size_chars']:,} chars, "
-                f"{info['iterations']} iterations, {info['evidence_count']} evidence"
+                f"{info['iterations']} iterations, {info['hist_count']} hist, "
+                f"{info['evidence_count']} evidence"
             )
         return "\n".join(lines)
 
@@ -1139,6 +1176,8 @@ def _create_exec_python_tool(manager: RLMSessionManager) -> BaseTool:
         compact_status = manager._note_tool_activity(context_id, source_op="exec_python")
 
         result = session.repl.execute(code)
+        final_value = session.repl.get_variable("Final")
+        final_set = final_value is not None
 
         parts = []
         if result.stdout:
@@ -1172,6 +1211,42 @@ def _create_exec_python_tool(manager: RLMSessionManager) -> BaseTool:
             )
         session.repl._citations.clear()
 
+        manager.append_hist_entry(
+            context_id,
+            {
+                "timestamp": datetime.now().isoformat(),
+                "kind": "exec_python",
+                "source_op": "exec_python",
+                "context_id": context_id,
+                "iteration": session.iterations,
+                "code_preview": code,
+                "stdout_chars": len(result.stdout),
+                "stderr_chars": len(result.stderr),
+                "stdout_preview": result.stdout,
+                "stderr_preview": result.stderr,
+                "return_value_present": result.return_value is not None,
+                "variables_updated_count": len(result.variables_updated),
+                "variables_updated_preview": result.variables_updated[:10],
+                "execution_time_ms": round(result.execution_time_ms, 2),
+                "error": result.error,
+                "truncated_output": result.truncated,
+                "final_set": final_set,
+                "final_preview": str(final_value) if final_set else "",
+            },
+        )
+
+        if manager.enable_final_sentinel:
+            sentinel_value = manager.consume_final_sentinel(context_id)
+            if sentinel_value is not None:
+                return _render_final_report(
+                    manager,
+                    context_id=context_id,
+                    answer=sentinel_value,
+                    confidence="medium",
+                    reasoning_summary="Completed via REPL `Final` sentinel.",
+                    completion_source="Final sentinel",
+                )
+
         output = _truncate(output)
         output += (
             f"\n[context_pressure:{_format_pressure_status(manager.get_context_pressure_status(context_id))}]"
@@ -1193,7 +1268,7 @@ def _create_exec_python_tool(manager: RLMSessionManager) -> BaseTool:
         description=(
             "Execute Python code in the sandboxed REPL with 100+ built-in helpers. "
             "The context is available as `ctx`. Helpers include search(), peek(), "
-            "extract_*(), cite(), sub_query(), and more."
+            "extract_*(), cite(), sub_query(), set_final(), and more."
         ),
         func=sync_exec_python,
         coroutine=async_exec_python,
@@ -1474,29 +1549,14 @@ def _create_finalize_tool(manager: RLMSessionManager) -> BaseTool:
         reasoning_summary: Annotated[str, "Brief summary of the reasoning process"] = "",
         context_id: Annotated[str, "Session identifier"] = "default",
     ) -> str:
-        session = manager.get_session(context_id)
-        parts = [f"## Final Answer\n\n{answer}"]
-        parts.append(f"\n**Confidence:** {confidence}")
-
-        if reasoning_summary:
-            parts.append(f"**Reasoning:** {reasoning_summary}")
-
-        if session:
-            parts.append(
-                f"\n**Analysis stats:** {session.iterations} iterations, "
-                f"{len(session.evidence)} evidence items, "
-                f"{len(session.think_history)} think steps"
-            )
-            if manager.get_context_pressure_status(context_id).get("compacted"):
-                compacted = manager.get_context_pressure_status(context_id)
-                parts.append(
-                    f"**Context pressure:** compacted={compacted.get('compaction_count', 0)} "
-                    f"(reason: {compacted.get('last_compaction_reason') or 'n/a'})"
-                )
-
-            parts.extend(_evidence_summary_lines(session.evidence))
-
-        return "\n".join(parts)
+        return _render_final_report(
+            manager,
+            context_id=context_id,
+            answer=answer,
+            confidence=confidence,
+            reasoning_summary=reasoning_summary,
+            completion_source="finalize",
+        )
 
     async def async_finalize(
         answer: Annotated[str, "The final answer with evidence citations"],
@@ -1545,6 +1605,7 @@ def _create_get_status_tool(manager: RLMSessionManager) -> BaseTool:
             f"Size: {session.meta.size_chars:,} chars, {session.meta.size_lines:,} lines\n"
             f"Tokens (est): ~{session.meta.size_tokens_estimate:,}\n"
             f"Iterations: {session.iterations}\n"
+            f"Hist entries: {len(session.hist)}\n"
             f"Evidence: {len(session.evidence)} items\n"
             f"Compacted: {pressure.get('compacted')} "
             f"(count={pressure.get('compaction_count')}, "

@@ -170,6 +170,48 @@ def _call_wrap_model(middleware: RLMMiddleware, messages: list) -> ModelRequest:
     return captured_request
 
 
+class TestExecMetadataInjection:
+    def test_wrap_model_call_injects_exec_metadata_by_default(self):
+        middleware = RLMMiddleware(system_prompt="")
+        middleware.manager.create_session("hello world", context_id="meta")
+        exec_tool = next(t for t in middleware.tools if t.name == "exec_python")
+        exec_tool.invoke({"code": "print('alpha')", "context_id": "meta"})
+
+        captured = _call_wrap_model(middleware, [HumanMessage(content="continue")])
+        system_text = _system_text(captured.system_message)
+        assert "RLM per-iteration execution metadata" in system_text
+        assert "exec_python" in system_text
+
+    def test_wrap_model_call_exec_metadata_injection_can_be_disabled(self):
+        middleware = RLMMiddleware(system_prompt="", inject_exec_metadata=False)
+        middleware.manager.create_session("hello world", context_id="meta")
+        exec_tool = next(t for t in middleware.tools if t.name == "exec_python")
+        exec_tool.invoke({"code": "print('alpha')", "context_id": "meta"})
+
+        captured = _call_wrap_model(middleware, [HumanMessage(content="continue")])
+        system_text = _system_text(captured.system_message)
+        assert "RLM per-iteration execution metadata" not in system_text
+
+    def test_wrap_model_call_exec_metadata_injection_is_bounded(self):
+        middleware = RLMMiddleware(
+            system_prompt="",
+            inject_exec_metadata_max_entries=1,
+            inject_exec_metadata_max_chars=260,
+        )
+        middleware.manager.create_session("hello world", context_id="meta")
+        exec_tool = next(t for t in middleware.tools if t.name == "exec_python")
+        exec_tool.invoke({"code": "print('first')", "context_id": "meta"})
+        exec_tool.invoke(
+            {"code": "print('second with longer output to test metadata truncation')", "context_id": "meta"}
+        )
+
+        captured = _call_wrap_model(middleware, [HumanMessage(content="continue")])
+        system_text = _system_text(captured.system_message)
+        assert "RLM per-iteration execution metadata" in system_text
+        assert system_text.count("exec_python") == 1
+        assert len(system_text) <= 260
+
+
 class TestCliFileMentionAutoLoad:
     def test_wrap_model_call_auto_loads_cli_file_mentions(self, tmp_path: Path):
         file_path = tmp_path / "sample.py"
@@ -444,6 +486,29 @@ class TestSerialization:
         loaded = sm2.get_session("loaded")
         assert loaded.repl.get_variable("ctx") == "test data for serialization"
         assert len(loaded.evidence) == 1
+
+    def test_save_and_load_preserves_hist(self, tmp_path):
+        from rlmagents.middleware._tools import _build_rlm_tools
+
+        sm = RLMSessionManager(hist_max_entries=5)
+        sm.create_session("test data for history", context_id="ser_hist")
+        tools = {t.name: t for t in _build_rlm_tools(sm)}
+        tools["exec_python"].invoke({"code": "print('hist-one')", "context_id": "ser_hist"})
+
+        path = tmp_path / "session_hist.json"
+        payload = sm.save_session(context_id="ser_hist", path=str(path))
+        assert "hist" in payload
+        assert len(payload["hist"]) == 1
+        assert payload["hist"][0]["kind"] == "exec_python"
+
+        sm2 = RLMSessionManager()
+        sm2.load_session_from_file(str(path), context_id="loaded_hist")
+        loaded = sm2.get_session("loaded_hist")
+        assert loaded is not None
+        assert len(loaded.hist) == 1
+        hist_var = loaded.repl.get_variable("hist")
+        assert isinstance(hist_var, list)
+        assert hist_var[0]["kind"] == "exec_python"
 
 
 class TestRLMTools:

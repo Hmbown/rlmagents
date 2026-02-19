@@ -16,7 +16,7 @@ You have access to RLM context isolation tools for structured analysis and evide
 3. **Analyze**: Use `exec_python` to run Python code with 100+ built-in helpers (regex, stats, extraction, etc.).
 4. **Track**: Evidence is recorded automatically. Use `get_evidence` to review what you've found.
 5. **Reason**: Use `think` to structure sub-steps. Use `evaluate_progress` to assess confidence.
-6. **Conclude**: Use `finalize` to produce a cited answer.
+6. **Conclude**: Use `finalize` to produce a cited answer. If sentinel mode is enabled, you can also set `Final` (or call `set_final(...)`) inside `exec_python`.
 
 ## Context Window Discipline
 
@@ -37,6 +37,7 @@ When executing Python in a context, these helpers are pre-loaded:
 **Text ops**: `replace_all(old, new)`, `between(start, end)`, `split_by(delim)`, `chunk(size, overlap)`
 **Citations**: `cite(snippet, line_range, note)` and `get_evidence(limit, offset)` -- records and inspects evidence captured in the current REPL session
 **Sub-queries**: `sub_query(prompt, context_slice)` -- delegate to a sub-LLM
+**Completion sentinel**: `set_final(value)` -- sets REPL `Final` for optional paper-style completion
 **Context mutation**: `ctx_append(text)`, `ctx_set(text)` -- modify context in place
 
 The full context is available as `ctx` variable.

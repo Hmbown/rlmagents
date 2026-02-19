@@ -20,7 +20,6 @@ from acp.schema import (
     TextResourceContents,
     ToolCallUpdate,
 )
-from deepagents import create_deep_agent
 from langchain.agents import create_agent
 from langchain.agents.middleware import HumanInTheLoopMiddleware
 from langchain.tools import ToolRuntime
@@ -29,6 +28,7 @@ from langchain_core.tools import tool
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import interrupt
+from rlmagents import create_rlm_agent as create_deep_agent
 
 from deepagents_acp.server import AgentServerACP, AgentSessionContext
 from tests.chat_model import GenericFakeChatModel

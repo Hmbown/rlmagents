@@ -7,12 +7,12 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from runloop_api_client.sdk import Devbox
 
-from deepagents.backends.protocol import (
+from rlmagents._harness.backends.protocol import (
     ExecuteResponse,
     FileDownloadResponse,
     FileUploadResponse,
 )
-from deepagents.backends.sandbox import BaseSandbox
+from rlmagents._harness.backends.sandbox import BaseSandbox
 
 
 class RunloopSandbox(BaseSandbox):

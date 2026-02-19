@@ -6,7 +6,6 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from deepagents import create_deep_agent
 from deepagents_cli.agent import create_cli_agent
 from dotenv import load_dotenv
 from harbor.agents.base import BaseAgent
@@ -27,6 +26,7 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
 from langsmith import trace
 from langsmith.client import Client
+from rlmagents import create_rlm_agent
 
 from deepagents_harbor.backend import HarborSandbox
 
@@ -76,7 +76,7 @@ class DeepAgentsWrapper(BaseAgent):
             temperature: Temperature setting for the model
             verbose: Enable verbose output
             use_cli_agent: If True, use create_cli_agent from rlmagents-cli (default).
-                If False, use create_deep_agent from SDK.
+                If False, use create_rlm_agent from SDK.
         """
         super().__init__(logs_dir, model_name, *args, **kwargs)
 
@@ -211,7 +211,7 @@ class DeepAgentsWrapper(BaseAgent):
             # Get formatted system prompt with directory context
             system_prompt = await self._get_formatted_system_prompt(backend)
 
-            deep_agent = create_deep_agent(
+            deep_agent = create_rlm_agent(
                 model=self._model, backend=backend, system_prompt=system_prompt
             )
 

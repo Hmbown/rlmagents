@@ -24,13 +24,13 @@ classifiers = [
 ]
 dependencies = [
     "agent-client-protocol>=0.8.0",
-    "deepagents",
+    "rlmagents",
     "python-dotenv>=1.2.1",
 ]
 
 [dependency-groups]
 examples=[
-    "deepagents_cli",
+    "rlmagents-cli",
 ]
 test = [
     "pytest>=8.3.4",
@@ -56,6 +56,10 @@ Twitter = "https://x.com/LangChain"
 
 [tool.uv]
 package = true
+
+[tool.uv.sources]
+rlmagents = { path = "../rlmagents", editable = true }
+rlmagents-cli = { path = "../cli", editable = true }
 
 [tool.ruff]
 line-length = 100

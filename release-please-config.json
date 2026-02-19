@@ -74,6 +74,61 @@
         "pyproject.toml"
       ],
       "changelog-path": "CHANGELOG.md"
+    },
+    "libs/acp": {
+      "release-type": "python",
+      "package-name": "deepagents-acp",
+      "component": "acp",
+      "bump-minor-pre-major": true,
+      "bump-patch-for-minor-pre-major": true,
+      "extra-files": [
+        "pyproject.toml"
+      ],
+      "changelog-path": "CHANGELOG.md"
+    },
+    "libs/harbor": {
+      "release-type": "python",
+      "package-name": "deepagents-harbor",
+      "component": "harbor",
+      "bump-minor-pre-major": true,
+      "bump-patch-for-minor-pre-major": true,
+      "extra-files": [
+        "pyproject.toml"
+      ],
+      "changelog-path": "CHANGELOG.md"
+    },
+    "libs/partners/daytona": {
+      "release-type": "python",
+      "package-name": "langchain-daytona",
+      "component": "daytona",
+      "bump-minor-pre-major": true,
+      "bump-patch-for-minor-pre-major": true,
+      "extra-files": [
+        "pyproject.toml"
+      ],
+      "changelog-path": "CHANGELOG.md"
+    },
+    "libs/partners/modal": {
+      "release-type": "python",
+      "package-name": "langchain-modal",
+      "component": "modal",
+      "bump-minor-pre-major": true,
+      "bump-patch-for-minor-pre-major": true,
+      "extra-files": [
+        "pyproject.toml"
+      ],
+      "changelog-path": "CHANGELOG.md"
+    },
+    "libs/partners/runloop": {
+      "release-type": "python",
+      "package-name": "langchain-runloop",
+      "component": "runloop",
+      "bump-minor-pre-major": true,
+      "bump-patch-for-minor-pre-major": true,
+      "extra-files": [
+        "pyproject.toml"
+      ],
+      "changelog-path": "CHANGELOG.md"
     }
   },
   "tag-separator": "==",

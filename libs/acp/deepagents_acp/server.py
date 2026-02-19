@@ -42,14 +42,13 @@ from acp.schema import (
     ToolCallUpdate,
     ToolKind,
 )
-from deepagents import create_deep_agent
-from deepagents.backends import CompositeBackend, FilesystemBackend, StateBackend
-from deepagents.graph import Checkpointer
 from langchain.tools import ToolRuntime
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph.state import CompiledStateGraph
-from langgraph.types import Command, StateSnapshot
+from langgraph.types import Checkpointer, Command, StateSnapshot
+from rlmagents import create_rlm_agent
+from rlmagents._harness.backends import CompositeBackend, FilesystemBackend, StateBackend
 
 from deepagents_acp.utils import (
     convert_audio_block_to_content_blocks,
@@ -791,7 +790,7 @@ async def _serve_test_agent() -> None:
                 },
             )
 
-        return create_deep_agent(
+        return create_rlm_agent(
             model="openai:gpt-5.2",
             checkpointer=checkpointer,
             backend=create_backend,

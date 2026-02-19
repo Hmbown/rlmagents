@@ -28,7 +28,7 @@ _BASE_TOOL_NAMES = frozenset(
 class TestRLMMiddleware:
     def test_init(self):
         mw = RLMMiddleware()
-        assert len(mw.tools) == 23
+        assert len(mw.tools) == 26
         assert mw.manager is not None
 
     def test_custom_config(self):
@@ -51,10 +51,19 @@ class TestRLMMiddleware:
         names = [t.name for t in mw.tools]
         assert len(names) == len(set(names))
 
-    def test_tool_count_23(self):
+    def test_tool_count_full_profile(self):
         mw = RLMMiddleware()
-        assert len(_RLM_TOOL_NAMES) == 23
-        assert len(mw.tools) == 23
+        assert len(_RLM_TOOL_NAMES) == 26
+        assert len(mw.tools) == 26
+
+    def test_core_profile_reduces_tools(self):
+        mw = RLMMiddleware(tool_profile="core")
+        names = {t.name for t in mw.tools}
+        assert "run_recipe" not in names
+        assert "configure_rlm" not in names
+        assert "load_file_context" in names
+        assert "chunk_context" in names
+        assert "rg_search" not in names
 
     def test_tool_names_do_not_collide_with_base_tools(self):
         assert _RLM_TOOL_NAMES.isdisjoint(_BASE_TOOL_NAMES)
@@ -102,6 +111,14 @@ class TestAutoLoad:
         msg = ToolMessage(content="x" * 1000, tool_call_id="tc1", name="read_file")
         result = mw._maybe_auto_load(msg, "read_file")
         assert result is msg
+
+    def test_auto_load_preview_can_be_disabled(self):
+        mw = RLMMiddleware(auto_load_threshold=10, auto_load_preview_chars=0)
+        large_content = "x" * 200
+        msg = ToolMessage(content=large_content, tool_call_id="tc1", name="read_file")
+        result = mw._maybe_auto_load(msg, "read_file")
+        assert isinstance(result, ToolMessage)
+        assert result.content.startswith("[Large result")
 
 
 class TestSessionManager:

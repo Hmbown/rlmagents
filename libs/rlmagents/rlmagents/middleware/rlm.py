@@ -17,7 +17,12 @@ from langgraph.types import Command
 
 from rlmagents.middleware._prompt import load_rlm_prompt
 from rlmagents.middleware._state import RLMState
-from rlmagents.middleware._tools import _build_rlm_tools
+from rlmagents.middleware._tools import (
+    DEFAULT_RLM_TOOL_PROFILE,
+    RLM_TOOL_NAMES,
+    RLMToolProfile,
+    _build_rlm_tools,
+)
 from rlmagents.repl.sandbox import SandboxConfig
 from rlmagents.session_manager import RLMSessionManager
 
@@ -36,41 +41,15 @@ def _append_to_system_message(
     return SystemMessage(content=new_content)
 
 
-# Tools that should NOT trigger auto-load interception
-_RLM_TOOL_NAMES = frozenset(
-    {
-        "load_context",
-        "list_contexts",
-        "diff_contexts",
-        "save_session",
-        "load_session",
-        "peek_context",
-        "search_context",
-        "semantic_search",
-        "cross_context_search",
-        "exec_python",
-        "get_variable",
-        "think",
-        "evaluate_progress",
-        "summarize_so_far",
-        "get_evidence",
-        "finalize",
-        "get_status",
-        "rlm_tasks",
-        "validate_recipe",
-        "estimate_recipe",
-        "run_recipe",
-        "run_recipe_code",
-        "configure_rlm",
-    }
-)
+# Backwards-compatible export for tests and integrations that import this symbol.
+_RLM_TOOL_NAMES = RLM_TOOL_NAMES
 
 
 class RLMMiddleware(AgentMiddleware):
     """Middleware that adds RLM context isolation to the agent stack.
 
-    Provides 23 tools for context loading, search, Python execution,
-    evidence tracking, reasoning workflow, and recipe pipelines.
+    Provides profile-driven tools for context loading, search, Python
+    execution, evidence tracking, reasoning workflow, and recipe pipelines.
 
     When ``sub_query_model`` is provided, the ``sub_query()`` /
     ``llm_query()`` function inside ``exec_python`` will invoke that
@@ -86,6 +65,10 @@ class RLMMiddleware(AgentMiddleware):
         sandbox_timeout: float = 180.0,
         context_policy: str = "trusted",
         auto_load_threshold: int = 10_000,
+        auto_load_preview_chars: int = 600,
+        tool_profile: RLMToolProfile = DEFAULT_RLM_TOOL_PROFILE,
+        include_tools: Sequence[str] = (),
+        exclude_tools: Sequence[str] = (),
         system_prompt: str | None = None,
         sub_query_model: object | None = None,
         sub_query_timeout: float = 120.0,
@@ -97,8 +80,15 @@ class RLMMiddleware(AgentMiddleware):
             sub_query_timeout=sub_query_timeout,
         )
         self._auto_load_threshold = auto_load_threshold
+        self._auto_load_preview_chars = max(auto_load_preview_chars, 0)
         self._custom_prompt = system_prompt
-        self.tools: Sequence[BaseTool] = _build_rlm_tools(self._manager)
+        self.tools: Sequence[BaseTool] = _build_rlm_tools(
+            self._manager,
+            profile=tool_profile,
+            include_tools=include_tools,
+            exclude_tools=exclude_tools,
+        )
+        self._rlm_tool_names = frozenset(tool.name for tool in self.tools)
 
     @property
     def manager(self) -> RLMSessionManager:
@@ -152,7 +142,7 @@ class RLMMiddleware(AgentMiddleware):
         """If a tool result is large, auto-load it into an RLM context."""
         if self._auto_load_threshold <= 0:
             return result
-        if tool_name in _RLM_TOOL_NAMES:
+        if tool_name in self._rlm_tool_names:
             return result
         if not isinstance(result, ToolMessage):
             return result
@@ -163,11 +153,19 @@ class RLMMiddleware(AgentMiddleware):
             ctx_name = f"auto_{tool_name}"
             self._manager.create_session(content, context_id=ctx_name)
             hint = (
-                f"\n\n[Large result ({len(content):,} chars) auto-loaded into RLM context "
+                f"[Large result ({len(content):,} chars) auto-loaded into RLM context "
                 f"'{ctx_name}'. Use search_context/peek_context to explore.]"
             )
+            preview = ""
+            if self._auto_load_preview_chars > 0:
+                preview = content[: self._auto_load_preview_chars]
+                if len(content) > self._auto_load_preview_chars:
+                    preview += (
+                        f"\n... [preview truncated at {self._auto_load_preview_chars:,} chars]"
+                    )
+            response_content = hint if not preview else f"{preview}\n\n{hint}"
             return ToolMessage(
-                content=content[:2000] + hint,
+                content=response_content,
                 tool_call_id=result.tool_call_id,
                 name=result.name,
             )

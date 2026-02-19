@@ -15,7 +15,7 @@ to avoid the overhead of spinning up multiple containers.
 from collections.abc import Iterator
 
 import pytest
-from deepagents.backends.protocol import SandboxBackendProtocol
+from rlmagents._harness.backends.protocol import SandboxBackendProtocol
 
 from deepagents_cli.integrations.sandbox_factory import create_sandbox
 

@@ -12,7 +12,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Optional
 
-from deepagents import create_deep_agent
+from rlmagents import create_rlm_agent
 
 
 def scan_dataset_for_solutions(dataset_path: Path) -> dict[str, Path]:
@@ -551,7 +551,7 @@ async def analyze_failed_trial(trial: Trial, analyze_pending: bool = False) -> O
         Analysis result as a string, or None if trajectory cannot be read
     """
     # Create the deep agent for trajectory analysis
-    analysis_agent = create_deep_agent(tools=[], system_prompt=ANALYSIS_PROMPT)
+    analysis_agent = create_rlm_agent(tools=[], system_prompt=ANALYSIS_PROMPT)
 
     # Skip completed trials
     if trial.status == TrialStatus.COMPLETED:

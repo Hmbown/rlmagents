@@ -1,13 +1,14 @@
 # RLMAgents
 
-RLMAgents is an **RLM-enhanced** agent harness for coding and research workflows built on
+RLMAgents is an **RLM-native** agent harness for coding and research workflows built on
 LangChain + LangGraph.
 
-It extends LangChain's **Deep Agents** project with a **Recursive Language Model (RLM)**
-architecture: isolated context sessions, evidence tracking, recursive sub-queries, a
-sandboxed Python analysis REPL, and recipe-style pipelines.
+It extends LangChain's **Deep Agents** project into a release-ready RLM workflow stack:
+isolated context sessions, evidence-backed reasoning, recursive sub-queries, a sandboxed
+Python analysis REPL, and recipe pipelines.
 
-Upstream project: https://github.com/langchain-ai/deepagents
+Upstream Deep Agents project: https://github.com/langchain-ai/deepagents  
+RLM design reference: [Recursive Language Model paper](https://arxiv.org/abs/2512.24601)
 
 ## RLM architecture (in practice)
 
@@ -76,6 +77,60 @@ rlmagents -n "Summarize the repository architecture"
 rlmagents -r
 rlmagents threads list
 rlmagents skills list
+```
+
+## RLM Capabilities Examples
+
+### Context isolation and evidence tracking
+
+```python
+from rlmagents import create_rlm_agent
+
+agent = create_rlm_agent()
+result = agent.invoke(
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": (
+                    "Load this long report into a context named 'report_q1', "
+                    "extract the key findings, and return a cited summary."
+                ),
+            }
+        ]
+    }
+)
+```
+
+### Recursive sub-queries and REPL analysis
+
+```python
+result = agent.invoke(
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": (
+                    "Analyze three data sources in parallel with subagents, "
+                    "use Python for numeric analysis, then synthesize one answer."
+                ),
+            }
+        ]
+    }
+)
+```
+
+### Recipe pipelines
+
+```python
+recipe = {
+    "version": "rlm.recipe.v1",
+    "steps": [
+        {"op": "load", "content": "Quarterly sales data..."},
+        {"op": "search", "pattern": "\\d+(?:\\.\\d+)?"},
+        {"op": "aggregate", "prompt": "Summarize trends and outliers"},
+    ],
+}
 ```
 
 ## Development

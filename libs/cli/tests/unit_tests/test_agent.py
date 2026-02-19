@@ -637,4 +637,8 @@ class TestCreateCliAgentHarnessDispatch:
             )
 
         assert mock_create_rlm_agent.call_args is not None
-        assert mock_create_rlm_agent.call_args.kwargs["sub_query_model"] is model
+        kwargs = mock_create_rlm_agent.call_args.kwargs
+        assert kwargs["sub_query_model"] is model
+        assert kwargs["rlm_tool_profile"] == "reasoning"
+        assert kwargs["auto_load_threshold"] == 1500
+        assert kwargs["auto_load_preview_chars"] == 0

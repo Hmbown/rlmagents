@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "rlmagents"
-version = "0.0.2"
+version = "0.0.3"
 description = "RLM-enhanced agent harness with planning, filesystem, sub-agents, and profile-driven context isolation tools"
 readme = "README.md"
 requires-python = ">=3.11,<4.0"
@@ -25,8 +25,31 @@ dependencies = [
     "langchain>=1.2.10,<1.3.0",
     "langchain-anthropic>=0.3.0",
     "langgraph>=0.3.0",
+    "langgraph-checkpoint-sqlite>=3.0.0,<4.0.0",
+    "langchain-openai>=1.1.8,<2.0.0",
+    "langchain-deepseek>=1.0.0,<2.0.0",
+    "textual>=6.0.0,<8.0.0",
+    "textual-autocomplete>=3.0.0,<5.0.0",
+    "prompt-toolkit>=3.0.52,<4.0.0",
+    "rich>=14.0.0,<15.0.0",
+    "markdownify>=0.13.0,<2.0.0",
+    "langsmith>=0.6.6",
+    "daytona>=0.113.0,<1.0.0",
+    "modal>=0.65.0,<2.0.0",
+    "runloop-api-client>=0.69.0",
+    "tavily-python>=0.7.21,<1.0.0",
+    "pyperclip>=1.11.0,<2.0.0",
+    "python-dotenv>=1.0.0,<2.0.0",
+    "requests>=2.0.0,<3.0.0",
+    "pillow>=10.0.0,<13.0.0",
     "pyyaml>=6.0",
+    "aiosqlite>=0.19.0,<1.0.0",
+    "tomli-w>=1.0.0,<2.0.0",
 ]
+
+[project.scripts]
+rlmagents = "deepagents_cli:cli_main"
+rlmagents-cli = "deepagents_cli:cli_main"
 
 [dependency-groups]
 dev = [
@@ -53,6 +76,13 @@ exclude = [
     "BOOTSTRAP_PROMPT.md",
     "phase2prompt.md",
 ]
+
+[tool.hatch.build.targets.wheel]
+packages = ["rlmagents", "deepagents_cli"]
+
+[tool.hatch.build.targets.wheel.shared-data]
+"deepagents_cli/default_agent_prompt.md" = "deepagents_cli/default_agent_prompt.md"
+"deepagents_cli/*.tcss" = "deepagents_cli/"
 
 [tool.ruff]
 line-length = 220

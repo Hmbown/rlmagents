@@ -20,6 +20,11 @@ pip install rlmagents
 uv add rlmagents
 ```
 
+```bash
+# Launch the CLI/TUI
+rlmagents
+```
+
 ```python
 from rlmagents import create_rlm_agent
 

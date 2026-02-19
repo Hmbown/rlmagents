@@ -28,6 +28,7 @@ jobs:
     # Keep env unset to support PyPI trusted-publishers configured as "Environment: Any".
     if: github.event_name == 'workflow_dispatch' || startsWith(github.event.release.tag_name, 'rlmagents==')
     runs-on: [self-hosted, Linux]
+    environment: pypi
 
     steps:
       - name: Set up uv

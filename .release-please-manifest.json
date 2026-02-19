@@ -1,8 +1,8 @@
 {
-  "libs/rlmagents": "0.0.1",
-  "libs/acp": "0.0.4",
-  "libs/harbor": "0.0.1",
-  "libs/partners/daytona": "0.0.2",
-  "libs/partners/modal": "0.0.1",
-  "libs/partners/runloop": "0.0.2"
+  "libs/rlmagents": "0.0.2",
+  "libs/acp": "0.0.5",
+  "libs/harbor": "0.0.2",
+  "libs/partners/daytona": "0.0.3",
+  "libs/partners/modal": "0.0.2",
+  "libs/partners/runloop": "0.0.3"
 }

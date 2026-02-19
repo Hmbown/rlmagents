@@ -5,6 +5,8 @@ import os
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+from types import MethodType
+from typing import Any
 
 from deepagents_cli.agent import create_cli_agent
 from dotenv import load_dotenv
@@ -89,6 +91,8 @@ class DeepAgentsWrapper(BaseAgent):
         self._verbose = verbose
         self._use_cli_agent = use_cli_agent
         self._model = init_chat_model(model_name, temperature=temperature)
+        if self._model_is_deepseek_reasoner(model_name):
+            self._patch_deepseek_reasoner_payload(self._model)
 
         # LangSmith run tracking for feedback
         self._langsmith_run_id: str | None = None
@@ -111,6 +115,72 @@ class DeepAgentsWrapper(BaseAgent):
             except Exception as e:
                 # Log error but don't fail initialization
                 print(f"Warning: Failed to build instruction->example_id mapping: {e}")
+
+    @staticmethod
+    def _model_is_deepseek_reasoner(model_name: str | None) -> bool:
+        """Return whether the configured model is DeepSeek reasoning mode."""
+        if not model_name:
+            return False
+
+        lowered = model_name.lower()
+        if "reasoner" not in lowered:
+            return False
+
+        if lowered.startswith("deepseek:"):
+            return True
+
+        return "deepseek" in lowered
+
+    @staticmethod
+    def _patch_deepseek_reasoner_payload(model: Any) -> None:
+        """Patch DeepSeek reasoner payload serialization for tool-call turns."""
+        get_request_payload = getattr(model, "_get_request_payload", None)
+        convert_input = getattr(model, "_convert_input", None)
+
+        if not callable(get_request_payload) or not callable(convert_input):
+            return
+        if getattr(model, "_rlmagents_deepseek_reasoner_patch", False):
+            return
+
+        original_get_request_payload = get_request_payload
+
+        def _patched_get_request_payload(
+            self: Any,  # noqa: ARG001 - required for MethodType binding
+            input_: Any,
+            *,
+            stop: list[str] | None = None,
+            **kwargs: Any,
+        ) -> dict[str, Any]:
+            payload = original_get_request_payload(input_, stop=stop, **kwargs)
+            payload_messages = payload.get("messages")
+            if not isinstance(payload_messages, list):
+                return payload
+
+            try:
+                messages = convert_input(input_).to_messages()
+            except Exception:
+                return payload
+
+            for lc_message, payload_message in zip(messages, payload_messages, strict=False):
+                if not isinstance(lc_message, AIMessage):
+                    continue
+                if not isinstance(payload_message, dict):
+                    continue
+                if payload_message.get("role") != "assistant":
+                    continue
+                if "tool_calls" not in payload_message:
+                    continue
+                reasoning_content = lc_message.additional_kwargs.get("reasoning_content")
+                if isinstance(reasoning_content, str) and reasoning_content:
+                    payload_message["reasoning_content"] = reasoning_content
+
+            return payload
+
+        model._get_request_payload = MethodType(  # type: ignore[attr-defined]
+            _patched_get_request_payload,
+            model,
+        )
+        model._rlmagents_deepseek_reasoner_patch = True  # type: ignore[attr-defined]
 
     @staticmethod
     def name() -> str:

@@ -1,14 +1,18 @@
 """Implement harbor backend."""
 
+import asyncio
 import base64
 import json
 import shlex
+from typing import Any
 
 from harbor.environments.base import BaseEnvironment
 from rlmagents._harness.backends.protocol import (
     EditResult,
     ExecuteResponse,
+    FileDownloadResponse,
     FileInfo,
+    FileUploadResponse,
     GrepMatch,
     SandboxBackendProtocol,
     WriteResult,
@@ -73,12 +77,17 @@ class HarborSandbox(SandboxBackendProtocol):
             exit_code=result.return_code,
         )
 
+    @staticmethod
+    def _run_in_thread(coro: Any) -> Any:
+        """Run an async coroutine in an isolated event loop."""
+        return asyncio.run(coro)
+
     def execute(
         self,
         command: str,
     ) -> ExecuteResponse:
         """Execute a bash command in the task environment."""
-        raise NotImplementedError("This backend only supports async execution")
+        return self._run_in_thread(self.aexecute(command))
 
     @property
     def id(self) -> str:
@@ -127,7 +136,7 @@ awk -v offset={offset} -v limit={limit} '
         limit: int = 2000,
     ) -> str:
         """Read file content with line numbers using shell commands."""
-        raise NotImplementedError("Use aread instead")
+        return self._run_in_thread(self.aread(file_path, offset=offset, limit=limit))
 
     async def awrite(
         self,
@@ -171,7 +180,7 @@ fi
         content: str,
     ) -> WriteResult:
         """Create a new file using shell commands."""
-        raise NotImplementedError("Use awrite instead")
+        return self._run_in_thread(self.awrite(file_path, content))
 
     async def aedit(
         self,
@@ -278,7 +287,14 @@ __DEEPAGENTS_EOF__
         replace_all: bool = False,
     ) -> EditResult:
         """Edit a file by replacing string occurrences using shell commands."""
-        raise NotImplementedError("Use aedit instead")
+        return self._run_in_thread(
+            self.aedit(
+                file_path,
+                old_string,
+                new_string,
+                replace_all=replace_all,
+            )
+        )
 
     async def als_info(self, path: str) -> list[FileInfo]:
         """List directory contents with metadata using shell commands."""
@@ -316,7 +332,7 @@ done
 
     def ls_info(self, path: str) -> list[FileInfo]:
         """List directory contents with metadata using shell commands."""
-        raise NotImplementedError("Use als_info instead")
+        return self._run_in_thread(self.als_info(path))
 
     async def agrep_raw(
         self,
@@ -371,7 +387,7 @@ done
         glob: str | None = None,
     ) -> list[GrepMatch] | str:
         """Search for pattern in files using grep."""
-        raise NotImplementedError("Use agrep_raw instead")
+        return self._run_in_thread(self.agrep_raw(pattern, path=path, glob=glob))
 
     async def aglob_info(self, pattern: str, path: str = "/") -> list[FileInfo]:
         """Find files matching glob pattern using shell commands.
@@ -422,4 +438,142 @@ done
 
     def glob_info(self, pattern: str, path: str = "/") -> list[FileInfo]:
         """Find files matching glob pattern using shell commands."""
-        raise NotImplementedError("Use aglob_info instead")
+        return self._run_in_thread(self.aglob_info(pattern, path=path))
+
+    def upload_files(self, files: list[tuple[str, bytes]]) -> list[FileUploadResponse]:
+        """Upload binary files into the sandbox."""
+        responses: list[FileUploadResponse] = []
+        for path, content in files:
+            if not path.startswith("/"):
+                responses.append(FileUploadResponse(path=path, error="invalid_path"))
+                continue
+
+            payload_b64 = base64.b64encode(content).decode("ascii")
+            cmd = f"""
+python3 - <<'PY'
+import base64
+import os
+import sys
+
+path = {json.dumps(path)}
+content_b64 = {json.dumps(payload_b64)}
+
+if not path.startswith('/'):
+    print("invalid_path")
+    sys.exit(3)
+
+if os.path.exists(path):
+    print(f"Error: File '{path}' already exists")
+    sys.exit(1)
+
+try:
+    parent_dir = os.path.dirname(path) or "."
+    os.makedirs(parent_dir, exist_ok=True)
+    with open(path, "wb") as f:
+        f.write(base64.b64decode(content_b64))
+except FileNotFoundError:
+    print("invalid_path")
+    sys.exit(3)
+except PermissionError:
+    print("permission_denied")
+    sys.exit(2)
+except Exception as e:  # pragma: no cover - defensive branch for unexpected filesystem issues
+    print(str(e))
+    sys.exit(4)
+PY
+"""
+            result = self.execute(cmd)
+
+            if result.exit_code != 0 or "Error:" in result.output:
+                err = result.output.strip()
+                if result.exit_code == 3 or "invalid_path" in err:
+                    responses.append(FileUploadResponse(path=path, error="invalid_path"))
+                elif "permission_denied" in err:
+                    responses.append(FileUploadResponse(path=path, error="permission_denied"))
+                else:
+                    responses.append(
+                        FileUploadResponse(path=path, error=err or "Unable to upload file")
+                    )
+                continue
+
+            responses.append(FileUploadResponse(path=path, error=None))
+
+        return responses
+
+    def download_files(self, paths: list[str]) -> list[FileDownloadResponse]:
+        """Download files from the sandbox."""
+        responses: list[FileDownloadResponse] = []
+        for path in paths:
+            if not path.startswith("/"):
+                responses.append(
+                    FileDownloadResponse(path=path, content=None, error="invalid_path")
+                )
+                continue
+
+            cmd = f"""
+python3 - <<'PY'
+import base64
+import os
+import sys
+
+path = {json.dumps(path)}
+
+if not path.startswith('/'):
+    print("invalid_path")
+    sys.exit(3)
+
+if not os.path.exists(path):
+    print("file_not_found")
+    sys.exit(1)
+
+if os.path.isdir(path):
+    print("is_directory")
+    sys.exit(2)
+
+try:
+    with open(path, "rb") as f:
+        data = f.read()
+    print(base64.b64encode(data).decode("ascii"))
+except PermissionError:
+    print("permission_denied")
+    sys.exit(4)
+except Exception as e:  # pragma: no cover - defensive branch for unexpected filesystem issues
+    print(str(e))
+    sys.exit(5)
+PY
+"""
+            result = self.execute(cmd)
+            if result.exit_code == 0:
+                b64 = result.output.strip()
+                if not b64:
+                    responses.append(FileDownloadResponse(path=path, content=b""))
+                else:
+                    responses.append(
+                        FileDownloadResponse(
+                            path=path,
+                            content=base64.b64decode(b64.encode("ascii"), validate=False),
+                        )
+                    )
+                continue
+
+            output = (result.output or "").strip().lower()
+            if result.exit_code == 1 or "file_not_found" in output:
+                error = "file_not_found"
+            elif result.exit_code == 2 or "is_directory" in output:
+                error = "is_directory"
+            elif result.exit_code == 3 or "invalid_path" in output:
+                error = "invalid_path"
+            elif "permission_denied" in output:
+                error = "permission_denied"
+            else:
+                error = "file_not_found"
+
+            responses.append(
+                FileDownloadResponse(
+                    path=path,
+                    content=None,
+                    error=error,
+                )
+            )
+
+        return responses

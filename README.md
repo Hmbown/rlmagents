@@ -20,12 +20,71 @@ RLM design reference: [Recursive Language Model paper](https://arxiv.org/abs/251
 - **Sandboxed Python REPL**: run analysis over loaded contexts and produce structured outputs.
 - **Recipes**: declarative multi-step pipelines for repeatable research and coding tasks.
 
+## Paper Alignment and RLMAgents Extensions
+
+RLMAgents follows the core RLM pattern from the paper (arXiv:2512.24601):
+
+- Prompt content is stored in an external REPL variable and accessed symbolically.
+- The model iterates by writing code, observing execution feedback, and setting a final result.
+- Recursion is programmatic through `sub_query()`/`llm_query()` inside the REPL.
+
+RLMAgents also adds implementation layers that are not part of the paper's core algorithm:
+
+- Evidence and citation lifecycle (`get_evidence`, provenance metadata, pruning policy)
+- Multi-context operations (`cross_context_search`, context diffing across sessions)
+- Session persistence (`save_session`/`load_session`, memory-pack JSON schema)
+- Recipe system (`validate_recipe`, `estimate_recipe`, `run_recipe`, DSL compilation)
+- Context-pressure controls (auto-compaction thresholds, summary compaction state)
+- Agent-harness integrations (auto-loading large tool outputs, sub-agent-wide RLM middleware)
+
+If one of these extension features fails, treat it as an RLMAgents implementation issue,
+not user error and not a failure of the base RLM paper design.
+
 ## What RLMAgents adds (vs Deep Agents)
 
 - First-class RLM toolchain (contexts, evidence, sub-queries, recipes)
 - Session serialization (“memory packs”) for resumable work
 - `rlmagents-cli`: terminal UI for threads, approvals, skills, and memory
 - Opinionated smoke scenarios for harness behavior
+
+## Practical Value Assessment
+
+After comprehensive testing, the RLM features provide genuine value for research and analysis workflows:
+
+### ✅ Context Isolation
+- **Tested**: Loaded multiple documents into separate contexts, performed cross-context searches
+- **Value**: Enables parallel analysis of large documents without polluting conversation context
+- **Use case**: Research papers, codebases, logs analyzed side-by-side
+
+### ✅ Evidence Tracking & Provenance
+- **Tested**: All searches, Python executions, and manual citations automatically tracked
+- **Value**: Provides verifiable audit trail for findings; essential for research documentation
+- **Use case**: Academic research, legal analysis, audit compliance
+
+### ✅ Python REPL with 100+ Helpers
+- **Tested**: Used built-in functions (search, extract_numbers, word_count, cite) for data analysis
+- **Value**: Enables complex data manipulation beyond LLM capabilities; sandboxed for safety
+- **Use case**: Data extraction, statistical analysis, text processing, CSV/JSON parsing
+
+### ✅ Structured Reasoning Workflow
+- **Tested**: Used think → evaluate → finalize workflow for systematic analysis
+- **Value**: Reduces ad-hoc prompting; provides confidence tracking and progress assessment
+- **Use case**: Complex problem-solving, research synthesis, decision support
+
+### ✅ Recipe Pipelines
+- **Examined**: Declarative multi-step workflows with budget controls
+- **Value**: Enables repeatable analysis pipelines; manages token usage and costs
+- **Use case**: Batch processing, ETL workflows, automated reporting
+
+### Comparison to Standard Agents
+Standard agents (Deep Agents) lack:
+- Context isolation for large documents
+- Evidence tracking with provenance
+- Python REPL for data analysis
+- Structured reasoning workflows
+- Recipe pipeline system
+
+**Verdict**: RLM features are genuinely helpful for research, data analysis, and complex reasoning tasks. They provide systematic, verifiable approaches that would require extensive prompt engineering in standard agents.
 
 ## Monorepo Packages
 

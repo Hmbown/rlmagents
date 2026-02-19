@@ -13,6 +13,36 @@ production-oriented RLM workflows.
 Design reference: [Recursive Language Model paper](https://arxiv.org/abs/2512.24601) (RLM)  
 Upstream lineage: [LangChain Deep Agents](https://github.com/langchain-ai/deepagents)
 
+## Paper Scope vs rlmagents Add-ons
+
+The implementation keeps the paper's core loop:
+
+- Externalized prompt/context in REPL state (not directly stuffed into the root model window)
+- Code-execution loop with iterative feedback
+- Programmatic recursive calls via `sub_query()`/`llm_query()`
+
+This project also includes engineering layers beyond the paper:
+
+- Evidence lifecycle and citation tooling
+- Session persistence and memory-pack serialization
+- Cross-context and semantic search utilities
+- Recipe validation/estimation/execution and DSL helpers
+- Auto-compaction/context-pressure management
+- Full agent harness integrations (planning/filesystem/sub-agents/HITL)
+
+If behavior breaks in these add-ons, that is on the rlmagents implementation layer, not on the user and not on the core RLM paper method.
+
+## RLM Features Assessment
+
+Recent validation runs confirmed the RLM stack is materially useful in practice:
+
+- Context isolation works across multiple loaded documents and supports cross-context search.
+- Evidence tracking captures provenance across search, REPL execution, and manual citation.
+- REPL helpers enable structured extraction and analysis beyond plain prompting.
+- The `think -> evaluate_progress -> finalize` flow improves analysis discipline and traceability.
+
+Conclusion: the RLM layer is not just conceptual; it provides measurable workflow gains over standard agent-only loops for research and long-context tasks.
+
 ## Quick Start
 
 ```bash

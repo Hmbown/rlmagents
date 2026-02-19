@@ -1242,7 +1242,7 @@ def build_langsmith_thread_url(thread_id: str) -> str | None:
     if not project_url:
         return None
 
-    return f"{project_url.rstrip('/')}/t/{thread_id}?utm_source=rlmagents-cli"
+    return f"{project_url.rstrip('/')}/t/{thread_id}?utm_source=rlmagents"
 
 
 def reset_langsmith_url_cache() -> None:

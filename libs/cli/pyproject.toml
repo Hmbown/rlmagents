@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "rlmagents-cli"
-version = "0.0.2"
+version = "0.0.3"
 description = "Terminal interface for RLMAgents - interactive AI agent with file operations, shell access, and sub-agent capabilities."
 readme = "README.md"
 license = { text = "MIT" }

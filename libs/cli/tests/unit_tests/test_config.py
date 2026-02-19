@@ -689,7 +689,7 @@ class TestBuildLangsmithThreadUrl:
 
         assert (
             result
-            == "https://smith.langchain.com/o/org/projects/p/proj/t/thread-123?utm_source=rlmagents-cli"
+            == "https://smith.langchain.com/o/org/projects/p/proj/t/thread-123?utm_source=rlmagents"
         )
 
     def test_strips_trailing_slash(self) -> None:
@@ -710,7 +710,7 @@ class TestBuildLangsmithThreadUrl:
 
         assert (
             result
-            == "https://smith.langchain.com/o/org/projects/p/proj/t/thread-123?utm_source=rlmagents-cli"
+            == "https://smith.langchain.com/o/org/projects/p/proj/t/thread-123?utm_source=rlmagents"
         )
 
     def test_returns_none_when_no_project_name(self) -> None:

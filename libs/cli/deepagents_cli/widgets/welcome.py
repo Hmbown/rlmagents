@@ -109,7 +109,7 @@ class WelcomeBanner(Static):
                     f"'{self._project_name}'",
                     style=Style(
                         color="cyan",
-                        link=f"{project_url}?utm_source=rlmagents-cli",
+                        link=f"{project_url}?utm_source=rlmagents",
                     ),
                 )
             else:
@@ -120,7 +120,7 @@ class WelcomeBanner(Static):
             if project_url:
                 thread_url = (
                     f"{project_url.rstrip('/')}/t/{self._cli_thread_id}"
-                    "?utm_source=rlmagents-cli"
+                    "?utm_source=rlmagents"
                 )
                 thread_line = Text.assemble(
                     ("Thread: ", "dim"),

@@ -34,7 +34,7 @@ RLMAgents also adds implementation layers that are not part of the paper's core 
 - Multi-context operations (`cross_context_search`, context diffing across sessions)
 - Session persistence (`save_session`/`load_session`, memory-pack JSON schema)
 - Recipe system (`validate_recipe`, `estimate_recipe`, `run_recipe`, DSL compilation)
-- Context-pressure controls (auto-compaction thresholds, summary compaction state)
+- Context-pressure policy (including rlmagents-specific compaction heuristics)
 - Agent-harness integrations (auto-loading large tool outputs, sub-agent-wide RLM middleware)
 
 If one of these extension features fails, treat it as an RLMAgents implementation issue,
@@ -76,15 +76,7 @@ After comprehensive testing, the RLM features provide genuine value for research
 - **Value**: Enables repeatable analysis pipelines; manages token usage and costs
 - **Use case**: Batch processing, ETL workflows, automated reporting
 
-### Comparison to Standard Agents
-Standard agents (Deep Agents) lack:
-- Context isolation for large documents
-- Evidence tracking with provenance
-- Python REPL for data analysis
-- Structured reasoning workflows
-- Recipe pipeline system
-
-**Verdict**: RLM features are genuinely helpful for research, data analysis, and complex reasoning tasks. They provide systematic, verifiable approaches that would require extensive prompt engineering in standard agents.
+**Assessment summary**: RLM features are helpful for research, data analysis, and complex reasoning tasks. In this implementation, they provide a systematic and verifiable workflow with different tradeoffs than baseline agent loops.
 
 ## Monorepo Packages
 

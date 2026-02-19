@@ -27,7 +27,7 @@ This project also includes engineering layers beyond the paper:
 - Session persistence and memory-pack serialization
 - Cross-context and semantic search utilities
 - Recipe validation/estimation/execution and DSL helpers
-- Auto-compaction/context-pressure management
+- Context-pressure handling (including rlmagents-specific compaction heuristics)
 - Full agent harness integrations (planning/filesystem/sub-agents/HITL)
 
 If behavior breaks in these add-ons, that is on the rlmagents implementation layer, not on the user and not on the core RLM paper method.
@@ -41,7 +41,7 @@ Recent validation runs confirmed the RLM stack is materially useful in practice:
 - REPL helpers enable structured extraction and analysis beyond plain prompting.
 - The `think -> evaluate_progress -> finalize` flow improves analysis discipline and traceability.
 
-Conclusion: the RLM layer is not just conceptual; it provides measurable workflow gains over standard agent-only loops for research and long-context tasks.
+Assessment summary: the RLM layer is not just conceptual; it provides measurable workflow gains over standard agent-only loops for research and long-context tasks.
 
 ## Quick Start
 

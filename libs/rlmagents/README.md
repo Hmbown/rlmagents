@@ -4,13 +4,15 @@
 [![PyPI - License](https://img.shields.io/pypi/l/rlmagents)](https://opensource.org/licenses/MIT)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 
-Agent harness with planning, filesystem, sub-agents, and RLM tools for context
-isolation and evidence-tracked reasoning. Built on LangChain + LangGraph.
+Agent harness built on LangChain + LangGraph that combines:
+- an RLM-aligned core loop (Algorithm 1 from the RLM paper)
+- additional agent-harness features (planning, filesystem, sub-agents, recipes, etc.)
 
 Fork of [LangChain Deep Agents](https://github.com/langchain-ai/deepagents).
 No runtime dependency on upstream deepagents internals.
 
 Design reference: [Recursive Language Model paper](https://arxiv.org/abs/2512.24601)
+([local PDF](../../2512.24601v2.pdf))
 
 ## Quick start
 
@@ -36,33 +38,37 @@ result = agent.invoke({
 
 ## What's included
 
-| Category | Tools |
-|----------|-------|
-| Planning | `write_todos`, `read_todos` |
-| Filesystem | `read_file`, `write_file`, `edit_file`, `ls`, `glob`, `grep` |
-| Shell | `execute` (restricted) |
-| Sub-agents | `task` (delegate with isolated contexts) |
-| Context mgmt | `load_context`, `load_file_context`, `list_contexts`, `diff_contexts`, `save_session`, `load_session` |
-| Query | `peek_context`, `search_context`, `semantic_search`, `chunk_context`, `cross_context_search`, `rg_search`, `exec_python`, `get_variable` |
-| Reasoning | `think`, `evaluate_progress`, `summarize_so_far`, `get_evidence`, `finalize` |
-| Recipes | `validate_recipe`, `run_recipe`, `run_recipe_code` |
-| Memory | AGENTS.md files loaded at startup |
-| Skills | Domain-specific capabilities from SKILL.md files |
+| Category | Origin | Tools/Behavior |
+|----------|--------|----------------|
+| Context externalization | RLM core | `load_context`, `load_file_context`, `list_contexts` |
+| REPL analysis loop | RLM core | `exec_python`, `get_variable` |
+| Recursive decomposition | RLM core | `sub_query()` / `llm_query()` inside REPL execution |
+| Completion handoff | RLM-aligned implementation | `finalize` (analogous to paper `Final`) |
+| Query and search extensions | RLMAgents extension | `peek_context`, `search_context`, `semantic_search`, `chunk_context`, `cross_context_search`, `rg_search` |
+| Planning | RLMAgents extension | `write_todos`, `read_todos` |
+| Filesystem | RLMAgents extension | `read_file`, `write_file`, `edit_file`, `ls`, `glob`, `grep` |
+| Shell | RLMAgents extension | `execute` (restricted) |
+| Sub-agents | RLMAgents extension | `task` (delegate with isolated contexts) |
+| Reasoning utilities | RLMAgents extension | `think`, `evaluate_progress`, `summarize_so_far`, `get_evidence` |
+| Recipes | RLMAgents extension | `validate_recipe`, `run_recipe`, `run_recipe_code` |
+| Memory | RLMAgents extension | AGENTS.md files loaded at startup |
+| Skills | RLMAgents extension | Domain-specific capabilities from SKILL.md files |
 
 Tool profiles control which RLM tools are available: `full` (all), `reasoning`
 (no recipe/config tools), `core` (minimum set).
 
 ## Paper alignment
 
-The core loop follows Algorithm 1 from the RLM paper:
+The RLM-aligned core follows Algorithm 1:
 
-1. Context is externalized into REPL sessions (not stuffed into the model window).
-2. The model iterates by writing code, observing execution output, and setting a result.
-3. Recursion happens via `sub_query()` / `llm_query()` inside the REPL.
+1. Prompt/data are treated as external REPL state instead of root-context stuffing.
+2. The model iterates through a code-execute-observe loop.
+3. Recursion is programmatic via `sub_query()` / `llm_query()` inside REPL code.
 
-Layers beyond the paper: evidence lifecycle, session persistence (memory-pack
-JSON), cross-context search, recipe DSL, context-pressure compaction, and
-agent-harness middleware (planning, filesystem, sub-agents, HITL).
+RLMAgents then layers additional functionality not required by the paper:
+evidence lifecycle, broader search/retrieval tools, session persistence
+(memory-pack JSON), recipe DSL, and full agent-harness middleware
+(planning/filesystem/shell/sub-agents/HITL).
 
 ## Typical workflow
 

@@ -40,7 +40,7 @@ Python REPL, and recipe pipelines. Design follows the
 Install from PyPI:
 
 ```bash
-pip install rlmagents rlmagents-cli
+pip install rlmagents
 ```
 
 Then run the CLI:

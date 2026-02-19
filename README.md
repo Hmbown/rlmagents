@@ -71,11 +71,10 @@ result = agent.invoke(
 
 ## Quickstart (CLI)
 
+Run the CLI directly from this repository:
+
 ```bash
-pip install rlmagents-cli
-# or
-uv tool install rlmagents-cli
-rlmagents
+uv run --project libs/cli rlmagents
 ```
 
 The CLI includes:

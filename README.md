@@ -37,14 +37,17 @@ Python REPL, and recipe pipelines. Design follows the
 
 ## Quickstart
 
-Use the `rlmagents` command as the default way to run the project.
-Run from this repository:
+Install from PyPI:
 
 ```bash
-uv run --project libs/cli rlmagents
+pip install rlmagents rlmagents-cli
 ```
 
+Then run the CLI:
+
 ```bash
+rlmagents
+
 # One-shot prompt
 rlmagents -n "Summarize the repository architecture"
 
@@ -60,7 +63,18 @@ The CLI supports interactive and non-interactive modes, conversation threads,
 human-in-the-loop approval, remote sandbox backends, and persistent memory
 via `.rlmagents/`.
 
-If you need to embed RLMAgents in Python code, use the core API:
+### From source
+
+If you're developing locally, you can run directly from the repo with
+[uv](https://docs.astral.sh/uv/):
+
+```bash
+uv run --project libs/cli rlmagents
+```
+
+### Python API
+
+To embed RLMAgents in Python code, use the core API:
 
 ```python
 from rlmagents import create_rlm_agent

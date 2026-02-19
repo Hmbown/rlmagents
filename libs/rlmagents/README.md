@@ -4,9 +4,14 @@
 [![PyPI - License](https://img.shields.io/pypi/l/rlmagents)](https://opensource.org/licenses/MIT)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 
-**RLM-enhanced agent harness** — A complete, standalone agent framework with planning, filesystem, sub-agents, plus 23 tools for context isolation and evidence-backed reasoning.
+**RLM-native agent harness** — A complete, standalone framework with planning,
+filesystem, sub-agents, and profile-driven RLM tools for context isolation and evidence-backed reasoning.
 
-Design based on the [Recursive Language Model](https://arxiv.org/abs/2512.24601) (RLM) architecture.
+RLMAgents is built from Deep Agents lineage and packaged as a standalone harness for
+production-oriented RLM workflows.
+
+Design reference: [Recursive Language Model paper](https://arxiv.org/abs/2512.24601) (RLM)  
+Upstream lineage: [LangChain Deep Agents](https://github.com/langchain-ai/deepagents)
 
 ## Quick Start
 
@@ -35,21 +40,32 @@ result = agent.invoke({
 | **Filesystem** | `read_file`, `write_file`, `edit_file`, `ls`, `glob`, `grep` |
 | **Shell** | `execute` (sandboxed) |
 | **Sub-agents** | `task` (delegate with isolated contexts) |
-| **RLM Context** | `load_context`, `list_contexts`, `diff_contexts`, `save_session`, `load_session` |
-| **RLM Query** | `peek_context`, `search_context`, `semantic_search`, `cross_context_search`, `exec_python`, `get_variable` |
+| **RLM Context** | `load_context`, `load_file_context`, `list_contexts`, `diff_contexts`, `save_session`, `load_session` |
+| **RLM Query** | `peek_context`, `search_context`, `semantic_search`, `chunk_context`, `cross_context_search`, `rg_search`, `exec_python`, `get_variable` |
 | **RLM Reasoning** | `think`, `evaluate_progress`, `summarize_so_far`, `get_evidence`, `finalize` |
 | **RLM Recipes** | `validate_recipe`, `run_recipe`, `run_recipe_code` |
+| **RLM Tool Profiles** | `full` (all), `reasoning` (no recipe/config), `core` (minimum set) |
 | **Memory** | AGENTS.md files loaded at startup |
 | **Skills** | Domain-specific capabilities from SKILL.md files |
 
-**Total: 31+ tools** (9 base + 23 RLM + skills/memory)
+**Total available: 35+ tools** (9 base + up to 26 RLM + skills/memory)
+
+## Why RLM Here
+
+RLMAgents bakes the RLM workflow directly into agent behavior:
+
+- Large context is isolated instead of flooding chat history.
+- Findings can be traced to evidence.
+- Recursive sub-queries offload targeted analysis.
+- The REPL enables deterministic extraction and computation.
+- Recipe pipelines make repeated analysis reproducible.
 
 ## RLM Workflow
 
 The agent is taught to use this workflow for complex analysis:
 
 1. **Load** large files/data into isolated RLM contexts
-2. **Explore** with `search_context`, `peek_context`, `semantic_search`
+2. **Explore** with `search_context`, `peek_context`, `semantic_search`, `chunk_context`, `rg_search`
 3. **Analyze** with `exec_python` (100+ built-in helpers: search, extract, stats, cite)
 4. **Track** evidence automatically (provenance for all findings)
 5. **Reason** with `think`, `evaluate_progress`
@@ -68,12 +84,34 @@ agent = create_rlm_agent(
     sub_query_timeout=120.0,               # Sub-query timeout
     skills=["/skills/analysis/"],          # Skill sources
     memory=["/memory/AGENTS.md"],          # Memory files
+    rlm_tool_profile="reasoning",          # full | reasoning | core
+    rlm_exclude_tools=("cross_context_search",),  # Optional tool removal
     auto_load_threshold=5000,              # Auto-load >5KB into RLM
+    auto_load_preview_chars=400,           # Keep transcript previews small
     sandbox_timeout=300.0,                 # RLM REPL timeout
     enable_rlm_in_subagents=True,          # Deprecated; RLM in sub-agents is always on
     interrupt_on={"edit_file": True},      # Human-in-the-loop
 )
 ```
+
+## Context Window-First Setup
+
+For workflows that should keep almost everything outside the active chat window:
+
+```python
+from pathlib import Path
+
+agent = create_rlm_agent(
+    model="deepseek/deepseek-chat",
+    rlm_tool_profile="core",
+    auto_load_threshold=1500,
+    auto_load_preview_chars=0,
+    rlm_system_prompt=Path("examples/rlm_system_prompt.md").read_text(),
+    memory=["examples/AGENTS.md"],
+)
+```
+
+Use `load_file_context` as the default way to ingest large files.
 
 ## Architecture
 
@@ -83,7 +121,7 @@ rlmagents/
 │   ├── backends/          # Backend protocol (State, Filesystem, etc.)
 │   └── middleware/        # Planning, filesystem, skills, memory, etc.
 ├── middleware/
-│   └── rlm.py             # RLM middleware (23 tools)
+│   └── rlm.py             # RLM middleware (tool profiles + auto-load controls)
 ├── repl/                  # Sandboxed Python REPL with 100+ helpers
 │   ├── sandbox.py         # Sandboxed execution environment
 │   └── helpers.py         # Built-in helper functions
@@ -103,7 +141,7 @@ rlmagents/
 - `pyyaml>=6.0`
 - `wcmatch>=10.0`
 
-**No external dependencies on aleph-rlm or deepagents** — rlmagents is fully standalone.
+**No runtime dependency on upstream deepagents internals** — rlmagents is fully standalone.
 
 ## Development
 

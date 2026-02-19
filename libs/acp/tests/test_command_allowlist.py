@@ -1,8 +1,8 @@
 """Test command type allowlist functionality for execute tool."""
 
-from deepagents import create_deep_agent
 from langchain_core.messages import AIMessage
 from langgraph.checkpoint.memory import MemorySaver
+from rlmagents import create_rlm_agent as create_deep_agent
 
 from deepagents_acp.server import AgentServerACP
 from deepagents_acp.utils import extract_command_types

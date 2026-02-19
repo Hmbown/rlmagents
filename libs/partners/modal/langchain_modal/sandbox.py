@@ -5,12 +5,12 @@ from __future__ import annotations
 import contextlib
 
 import modal
-from deepagents.backends.protocol import (
+from rlmagents._harness.backends.protocol import (
     ExecuteResponse,
     FileDownloadResponse,
     FileUploadResponse,
 )
-from deepagents.backends.sandbox import BaseSandbox
+from rlmagents._harness.backends.sandbox import BaseSandbox
 
 
 class ModalSandbox(BaseSandbox):

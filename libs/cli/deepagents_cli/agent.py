@@ -50,6 +50,10 @@ DEFAULT_AGENT_NAME = "agent"
 
 HarnessType = Literal["rlmagents"]
 
+CLI_DEFAULT_RLM_TOOL_PROFILE = "reasoning"
+CLI_DEFAULT_RLM_AUTO_LOAD_THRESHOLD = 1500
+CLI_DEFAULT_RLM_AUTO_LOAD_PREVIEW_CHARS = 0
+
 
 def list_agents() -> None:
     """List all available agents."""
@@ -657,5 +661,9 @@ def create_cli_agent(
         checkpointer=final_checkpointer,
         subagents=custom_subagents or None,
         sub_query_model=sub_query_model,
+        rlm_tool_profile=CLI_DEFAULT_RLM_TOOL_PROFILE,
+        auto_load_threshold=CLI_DEFAULT_RLM_AUTO_LOAD_THRESHOLD,
+        auto_load_preview_chars=CLI_DEFAULT_RLM_AUTO_LOAD_PREVIEW_CHARS,
+        rlm_system_prompt="",
     ).with_config(config)
     return agent, composite_backend

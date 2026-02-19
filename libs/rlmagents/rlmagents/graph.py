@@ -4,7 +4,7 @@ This module provides ``create_rlm_agent()``, a complete standalone agent harness
 - Planning (todo lists)
 - Filesystem access (read, write, edit, search)
 - Sub-agents for delegation
-- RLM context isolation and evidence tracking (23 tools)
+- RLM context isolation and evidence tracking (profile-driven tools)
 - Memory and skills support
 - Auto-summarization for long conversations
 
@@ -41,6 +41,7 @@ from langgraph.graph.state import CompiledStateGraph
 from langgraph.store.base import BaseStore
 from langgraph.types import Checkpointer
 
+from rlmagents.middleware._tools import DEFAULT_RLM_TOOL_PROFILE, RLMToolProfile
 from rlmagents.middleware.rlm import RLMMiddleware
 
 if TYPE_CHECKING:
@@ -311,6 +312,10 @@ def _build_rlm_middleware(
     sandbox_timeout: float,
     context_policy: str,
     auto_load_threshold: int,
+    auto_load_preview_chars: int,
+    rlm_tool_profile: RLMToolProfile,
+    rlm_include_tools: Sequence[str],
+    rlm_exclude_tools: Sequence[str],
     rlm_system_prompt: str | None,
     sub_query_model: BaseChatModel | None,
     sub_query_timeout: float,
@@ -320,6 +325,10 @@ def _build_rlm_middleware(
         sandbox_timeout=sandbox_timeout,
         context_policy=context_policy,
         auto_load_threshold=auto_load_threshold,
+        auto_load_preview_chars=auto_load_preview_chars,
+        tool_profile=rlm_tool_profile,
+        include_tools=rlm_include_tools,
+        exclude_tools=rlm_exclude_tools,
         system_prompt=rlm_system_prompt,
         sub_query_model=sub_query_model,
         sub_query_timeout=sub_query_timeout,
@@ -367,6 +376,10 @@ def create_rlm_agent(
     sandbox_timeout: float = 180.0,
     context_policy: str = "trusted",
     auto_load_threshold: int = 10_000,
+    auto_load_preview_chars: int = 600,
+    rlm_tool_profile: RLMToolProfile = DEFAULT_RLM_TOOL_PROFILE,
+    rlm_include_tools: Sequence[str] = (),
+    rlm_exclude_tools: Sequence[str] = (),
     sub_query_model: BaseChatModel | None = None,
     sub_query_timeout: float = 120.0,
     rlm_system_prompt: str | None = None,
@@ -375,7 +388,7 @@ def create_rlm_agent(
     """Create an RLM-enhanced agent.
 
     This is a complete standalone agent harness with planning, filesystem,
-    sub-agents, plus 23 RLM tools for context isolation and evidence tracking.
+    sub-agents, plus profile-driven RLM tools for context isolation and evidence tracking.
 
     Args:
         model: The LLM to use. Defaults to claude-sonnet-4-5-20250929.
@@ -397,6 +410,10 @@ def create_rlm_agent(
         sandbox_timeout: RLM REPL timeout.
         context_policy: RLM context policy.
         auto_load_threshold: Auto-load threshold for large results.
+        auto_load_preview_chars: Preview characters shown after auto-load (0 disables previews).
+        rlm_tool_profile: RLM tool profile (`full`, `reasoning`, or `core`).
+        rlm_include_tools: Additional RLM tools to include on top of the profile.
+        rlm_exclude_tools: RLM tools to remove from the selected profile.
         sub_query_model: Optional model used by RLM `sub_query()`/`llm_query()`.
         sub_query_timeout: Timeout in seconds for recursive sub-query calls.
         rlm_system_prompt: Custom RLM workflow prompt.
@@ -441,6 +458,10 @@ def create_rlm_agent(
         sandbox_timeout=sandbox_timeout,
         context_policy=context_policy,
         auto_load_threshold=auto_load_threshold,
+        auto_load_preview_chars=auto_load_preview_chars,
+        rlm_tool_profile=rlm_tool_profile,
+        rlm_include_tools=rlm_include_tools,
+        rlm_exclude_tools=rlm_exclude_tools,
         rlm_system_prompt=rlm_system_prompt,
         sub_query_model=sub_query_model,
         sub_query_timeout=sub_query_timeout,
@@ -490,6 +511,10 @@ def create_rlm_agent(
                     sandbox_timeout=sandbox_timeout,
                     context_policy=context_policy,
                     auto_load_threshold=auto_load_threshold,
+                    auto_load_preview_chars=auto_load_preview_chars,
+                    rlm_tool_profile=rlm_tool_profile,
+                    rlm_include_tools=rlm_include_tools,
+                    rlm_exclude_tools=rlm_exclude_tools,
                     rlm_system_prompt=rlm_system_prompt,
                     sub_query_model=sub_query_model,
                     sub_query_timeout=sub_query_timeout,
@@ -541,6 +566,10 @@ def create_rlm_agent(
             sandbox_timeout=sandbox_timeout,
             context_policy=context_policy,
             auto_load_threshold=auto_load_threshold,
+            auto_load_preview_chars=auto_load_preview_chars,
+            rlm_tool_profile=rlm_tool_profile,
+            rlm_include_tools=rlm_include_tools,
+            rlm_exclude_tools=rlm_exclude_tools,
             rlm_system_prompt=rlm_system_prompt,
             sub_query_model=sub_query_model,
             sub_query_timeout=sub_query_timeout,

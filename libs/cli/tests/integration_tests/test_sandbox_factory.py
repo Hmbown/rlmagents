@@ -11,8 +11,8 @@ from abc import ABC, abstractmethod
 from collections.abc import Iterator
 
 import pytest
-from deepagents.backends.protocol import SandboxBackendProtocol
-from deepagents.backends.sandbox import BaseSandbox
+from rlmagents._harness.backends.protocol import SandboxBackendProtocol
+from rlmagents._harness.backends.sandbox import BaseSandbox
 
 from deepagents_cli.integrations.sandbox_factory import create_sandbox
 

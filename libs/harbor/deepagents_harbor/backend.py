@@ -4,7 +4,8 @@ import base64
 import json
 import shlex
 
-from deepagents.backends.protocol import (
+from harbor.environments.base import BaseEnvironment
+from rlmagents._harness.backends.protocol import (
     EditResult,
     ExecuteResponse,
     FileInfo,
@@ -12,7 +13,6 @@ from deepagents.backends.protocol import (
     SandboxBackendProtocol,
     WriteResult,
 )
-from harbor.environments.base import BaseEnvironment
 
 
 class HarborSandbox(SandboxBackendProtocol):

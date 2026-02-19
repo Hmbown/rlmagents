@@ -27,7 +27,7 @@
 #   * hotfix     — urgent fix that won't trigger a release
 #
 # Allowed Scope(s) (optional):
-#   deepagents, sdk, rlmagents-cli, cli, harbor, acp, examples, infra, deps
+#   deepagents, rlmagents, sdk, rlmagents-cli, cli, harbor, acp, daytona, modal, runloop, examples, infra, deps
 #
 # Multiple scopes can be used by separating them with a comma.
 #
@@ -77,6 +77,7 @@ jobs:
             hotfix
           scopes: |
             deepagents
+            rlmagents
             sdk
             rlmagents-cli
             cli
@@ -86,6 +87,8 @@ jobs:
             infra
             deps
             daytona
+            modal
+            runloop
           requireScope: false
           disallowScopes: |
             release

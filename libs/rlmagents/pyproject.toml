@@ -5,11 +5,11 @@ build-backend = "hatchling.build"
 [project]
 name = "rlmagents"
 version = "0.0.1"
-description = "RLM-enhanced agent harness: planning, filesystem, sub-agents, plus 23 tools for context isolation and evidence-backed reasoning"
+description = "RLM-enhanced agent harness with planning, filesystem, sub-agents, and profile-driven context isolation tools"
 readme = "README.md"
 requires-python = ">=3.11,<4.0"
 license = {text = "MIT"}
-keywords = ["agent", "rlm", "aleph", "recursive-reasoning", "langchain", "langgraph"]
+keywords = ["agent", "rlm", "recursive-reasoning", "langchain", "langgraph"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",

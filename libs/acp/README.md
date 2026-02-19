@@ -70,7 +70,7 @@ uv add deepagents-acp
 import asyncio
 
 from acp import run_agent
-from deepagents import create_deep_agent
+from rlmagents import create_rlm_agent
 from langgraph.checkpoint.memory import MemorySaver
 
 from deepagents_acp.server import AgentServerACP
@@ -82,7 +82,7 @@ async def get_weather(city: str) -> str:
 
 
 async def main() -> None:
-    agent = create_deep_agent(
+    agent = create_rlm_agent(
         tools=[get_weather],
         system_prompt="You are a helpful assistant",
         checkpointer=MemorySaver(),

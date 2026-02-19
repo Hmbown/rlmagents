@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
+import gzip
+import subprocess
+
 from rlmagents.middleware._tools import _build_rlm_tools
 from rlmagents.session_manager import RLMSessionManager
 
 
 class TestToolBuilding:
-    def test_build_all_23_tools(self):
+    def test_build_all_tools_in_full_profile(self):
         mgr = RLMSessionManager()
         tools = _build_rlm_tools(mgr)
-        assert len(tools) == 23
+        assert len(tools) == 26
 
     def test_tool_names_unique(self):
         mgr = RLMSessionManager()
@@ -24,6 +27,7 @@ class TestToolBuilding:
         names = {t.name for t in tools}
         expected = {
             "load_context",
+            "load_file_context",
             "list_contexts",
             "diff_contexts",
             "save_session",
@@ -31,7 +35,9 @@ class TestToolBuilding:
             "peek_context",
             "search_context",
             "semantic_search",
+            "chunk_context",
             "cross_context_search",
+            "rg_search",
             "exec_python",
             "get_variable",
             "think",
@@ -49,6 +55,29 @@ class TestToolBuilding:
         }
         assert names == expected
 
+    def test_core_profile_has_reduced_toolset(self):
+        mgr = RLMSessionManager()
+        tools = _build_rlm_tools(mgr, profile="core")
+        names = {t.name for t in tools}
+        assert "run_recipe" not in names
+        assert "configure_rlm" not in names
+        assert "load_file_context" in names
+        assert "chunk_context" in names
+        assert "rg_search" not in names
+
+    def test_profile_include_and_exclude(self):
+        mgr = RLMSessionManager()
+        tools = _build_rlm_tools(
+            mgr,
+            profile="core",
+            include_tools=("run_recipe", "rg_search"),
+            exclude_tools=("semantic_search",),
+        )
+        names = {t.name for t in tools}
+        assert "run_recipe" in names
+        assert "semantic_search" not in names
+        assert "rg_search" in names
+
 
 class TestLoadContextTool:
     def _get_tool(self, mgr):
@@ -62,6 +91,84 @@ class TestLoadContextTool:
         assert "t1" in result
         assert "loaded" in result.lower()
         assert "t1" in mgr.sessions
+
+
+class TestLoadFileContextTool:
+    def _get_tool(self, mgr):
+        tools = _build_rlm_tools(mgr)
+        return next(t for t in tools if t.name == "load_file_context")
+
+    def test_load_file_context(self, tmp_path):
+        path = tmp_path / "context.txt"
+        path.write_text("hello from file")
+        mgr = RLMSessionManager()
+        tool = self._get_tool(mgr)
+        result = tool.invoke({"path": str(path), "context_id": "file_ctx"})
+        assert "file_ctx" in result
+        session = mgr.get_session("file_ctx")
+        assert session is not None
+        assert session.repl.get_variable("ctx") == "hello from file"
+
+    def test_load_file_context_gzip(self, tmp_path):
+        path = tmp_path / "context.txt.gz"
+        path.write_bytes(gzip.compress(b"hello from compressed file"))
+        mgr = RLMSessionManager()
+        tool = self._get_tool(mgr)
+        result = tool.invoke({"path": str(path), "context_id": "compressed"})
+        assert "decompressed:gzip" in result
+        session = mgr.get_session("compressed")
+        assert session is not None
+        assert session.repl.get_variable("ctx") == "hello from compressed file"
+
+
+class TestChunkContextTool:
+    def _get_tool(self, mgr):
+        tools = _build_rlm_tools(mgr)
+        return next(t for t in tools if t.name == "chunk_context")
+
+    def test_chunk_context_creates_chunk_metadata(self):
+        mgr = RLMSessionManager()
+        mgr.create_session("abcdefghijklmnopqrstuvwxyz", context_id="chunks")
+        tool = self._get_tool(mgr)
+        result = tool.invoke({"context_id": "chunks", "chunk_size": 10, "overlap": 2})
+        assert "Created" in result
+        session = mgr.get_session("chunks")
+        assert session is not None
+        assert session.chunks is not None
+        assert len(session.chunks) >= 3
+
+
+class TestRgSearchTool:
+    def _get_tool(self, mgr):
+        tools = _build_rlm_tools(mgr)
+        return next(t for t in tools if t.name == "rg_search")
+
+    def test_rg_search_loads_results_into_context(self, monkeypatch):
+        mgr = RLMSessionManager()
+        tool = self._get_tool(mgr)
+
+        monkeypatch.setattr("rlmagents.middleware._tools.shutil.which", lambda _: "/usr/bin/rg")
+
+        def _fake_run(*_args, **_kwargs):
+            return subprocess.CompletedProcess(
+                args=["rg"],
+                returncode=0,
+                stdout="a.py:1:alpha\nb.py:2:alpha",
+                stderr="",
+            )
+
+        monkeypatch.setattr("rlmagents.middleware._tools.subprocess.run", _fake_run)
+        result = tool.invoke(
+            {
+                "pattern": "alpha",
+                "paths": ".",
+                "load_context_id": "rg_hits",
+            }
+        )
+        assert "rg_hits" in result
+        session = mgr.get_session("rg_hits")
+        assert session is not None
+        assert "a.py:1:alpha" in session.repl.get_variable("ctx")
 
 
 class TestSearchContextTool:

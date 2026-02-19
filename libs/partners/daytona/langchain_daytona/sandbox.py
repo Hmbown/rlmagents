@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import daytona
 from daytona import FileDownloadRequest, FileUpload
-from deepagents.backends.protocol import (
+from rlmagents._harness.backends.protocol import (
     ExecuteResponse,
     FileDownloadResponse,
     FileUploadResponse,
 )
-from deepagents.backends.sandbox import BaseSandbox
+from rlmagents._harness.backends.sandbox import BaseSandbox
 
 
 class DaytonaSandbox(BaseSandbox):

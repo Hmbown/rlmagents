@@ -22,7 +22,7 @@ classifiers = [
 version = "0.0.1"
 requires-python = ">=3.11,<4.0"
 dependencies = [
-    "deepagents",
+    "rlmagents",
     "modal",
 ]
 
@@ -48,7 +48,7 @@ test = [
 ]
 
 [tool.uv.sources]
-deepagents = { path = "../../deepagents", editable = true }
+rlmagents = { path = "../../rlmagents", editable = true }
 
 [tool.uv]
 constraint-dependencies = ["urllib3>=2.6.3"]

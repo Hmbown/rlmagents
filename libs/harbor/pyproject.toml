@@ -22,7 +22,7 @@ dependencies = [
     "harbor>=0.1.12",
     "langchain-anthropic>=1.0.0",
     "langchain-openai>=1.0.0",
-    "deepagents>=0.2.5",
+    "rlmagents>=0.0.1",
     # LangSmith for observability
     "langsmith>=0.4.0",
     "modal>=0.64.0",
@@ -68,10 +68,10 @@ override-dependencies = [
 
 [tool.uv.sources]
 rlmagents-cli = { path = "../cli" }
-deepagents = { path = "../deepagents", editable = true }
+rlmagents = { path = "../rlmagents", editable = true }
 
 [tool.ty.environment]
-extra-paths = ["../deepagents", "../cli"]
+extra-paths = ["../rlmagents", "../cli"]
 
 [tool.ruff]
 line-length = 100

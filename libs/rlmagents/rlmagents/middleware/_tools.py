@@ -1,56 +1,192 @@
-"""LangChain tool factories for RLM middleware.
-
-23 tools built via StructuredTool.from_function(), each delegating to
-RLMSessionManager.
-"""
+"""LangChain tool factories for RLM middleware."""
 
 from __future__ import annotations
 
 import asyncio
+import bz2
 import difflib
+import gzip
 import json
+import lzma
+import shutil
+import subprocess
+from collections.abc import Callable, Sequence
 from datetime import datetime
-from typing import Annotated, Any
+from pathlib import Path
+from typing import Annotated, Any, Literal
 
 from langchain_core.tools import BaseTool, StructuredTool
 
 from rlmagents.session_manager import RLMSessionManager
 from rlmagents.types import Evidence
 
+RLMToolProfile = Literal["full", "reasoning", "core"]
+DEFAULT_RLM_TOOL_PROFILE: RLMToolProfile = "full"
+RLM_TOOL_NAMES = frozenset(
+    {
+        "load_context",
+        "load_file_context",
+        "list_contexts",
+        "diff_contexts",
+        "save_session",
+        "load_session",
+        "peek_context",
+        "search_context",
+        "semantic_search",
+        "chunk_context",
+        "cross_context_search",
+        "rg_search",
+        "exec_python",
+        "get_variable",
+        "think",
+        "evaluate_progress",
+        "summarize_so_far",
+        "get_evidence",
+        "finalize",
+        "get_status",
+        "rlm_tasks",
+        "validate_recipe",
+        "estimate_recipe",
+        "run_recipe",
+        "run_recipe_code",
+        "configure_rlm",
+    }
+)
 
-def _build_rlm_tools(manager: RLMSessionManager) -> list[BaseTool]:
-    """Build all 23 RLM tools for the given session manager."""
-    return [
-        # Context tools (5)
-        _create_load_context_tool(manager),
-        _create_list_contexts_tool(manager),
-        _create_diff_contexts_tool(manager),
-        _create_save_session_tool(manager),
-        _create_load_session_tool(manager),
-        # Query tools (6) - includes cross-context search
-        _create_peek_context_tool(manager),
-        _create_search_context_tool(manager),
-        _create_semantic_search_tool(manager),
-        _create_cross_context_search_tool(manager),
-        _create_exec_python_tool(manager),
-        _create_get_variable_tool(manager),
-        # Reasoning tools (5)
-        _create_think_tool(manager),
-        _create_evaluate_progress_tool(manager),
-        _create_summarize_so_far_tool(manager),
-        _create_get_evidence_tool(manager),
-        _create_finalize_tool(manager),
-        # Status/meta tools (2)
-        _create_get_status_tool(manager),
-        _create_rlm_tasks_tool(manager),
-        # Recipe tools (4)
-        _create_validate_recipe_tool(manager),
-        _create_estimate_recipe_tool(manager),
-        _create_run_recipe_tool(manager),
-        _create_run_recipe_code_tool(manager),
-        # Config tool (1)
-        _create_configure_rlm_tool(manager),
-    ]
+_RLM_TOOL_PROFILES: dict[RLMToolProfile, tuple[str, ...]] = {
+    "full": (
+        "load_context",
+        "load_file_context",
+        "list_contexts",
+        "diff_contexts",
+        "save_session",
+        "load_session",
+        "peek_context",
+        "search_context",
+        "semantic_search",
+        "chunk_context",
+        "cross_context_search",
+        "rg_search",
+        "exec_python",
+        "get_variable",
+        "think",
+        "evaluate_progress",
+        "summarize_so_far",
+        "get_evidence",
+        "finalize",
+        "get_status",
+        "rlm_tasks",
+        "validate_recipe",
+        "estimate_recipe",
+        "run_recipe",
+        "run_recipe_code",
+        "configure_rlm",
+    ),
+    "reasoning": (
+        "load_context",
+        "load_file_context",
+        "list_contexts",
+        "save_session",
+        "load_session",
+        "peek_context",
+        "search_context",
+        "semantic_search",
+        "chunk_context",
+        "cross_context_search",
+        "rg_search",
+        "exec_python",
+        "get_variable",
+        "think",
+        "evaluate_progress",
+        "summarize_so_far",
+        "get_evidence",
+        "finalize",
+        "get_status",
+        "rlm_tasks",
+    ),
+    "core": (
+        "load_context",
+        "load_file_context",
+        "list_contexts",
+        "peek_context",
+        "search_context",
+        "semantic_search",
+        "chunk_context",
+        "exec_python",
+        "think",
+        "evaluate_progress",
+        "summarize_so_far",
+        "get_evidence",
+        "finalize",
+        "get_status",
+    ),
+}
+
+
+def _validate_tool_names(names: Sequence[str], *, source: str) -> None:
+    unknown = sorted({name for name in names if name not in RLM_TOOL_NAMES})
+    if unknown:
+        known_names = ", ".join(sorted(RLM_TOOL_NAMES))
+        unknown_names = ", ".join(unknown)
+        raise ValueError(
+            f"Unknown tools in {source}: {unknown_names}. "
+            f"Valid tools: {known_names}"
+        )
+
+
+def _get_tool_factories() -> dict[str, Callable[[RLMSessionManager], BaseTool]]:
+    return {
+        "load_context": _create_load_context_tool,
+        "load_file_context": _create_load_file_context_tool,
+        "list_contexts": _create_list_contexts_tool,
+        "diff_contexts": _create_diff_contexts_tool,
+        "save_session": _create_save_session_tool,
+        "load_session": _create_load_session_tool,
+        "peek_context": _create_peek_context_tool,
+        "search_context": _create_search_context_tool,
+        "semantic_search": _create_semantic_search_tool,
+        "chunk_context": _create_chunk_context_tool,
+        "cross_context_search": _create_cross_context_search_tool,
+        "rg_search": _create_rg_search_tool,
+        "exec_python": _create_exec_python_tool,
+        "get_variable": _create_get_variable_tool,
+        "think": _create_think_tool,
+        "evaluate_progress": _create_evaluate_progress_tool,
+        "summarize_so_far": _create_summarize_so_far_tool,
+        "get_evidence": _create_get_evidence_tool,
+        "finalize": _create_finalize_tool,
+        "get_status": _create_get_status_tool,
+        "rlm_tasks": _create_rlm_tasks_tool,
+        "validate_recipe": _create_validate_recipe_tool,
+        "estimate_recipe": _create_estimate_recipe_tool,
+        "run_recipe": _create_run_recipe_tool,
+        "run_recipe_code": _create_run_recipe_code_tool,
+        "configure_rlm": _create_configure_rlm_tool,
+    }
+
+
+def _build_rlm_tools(
+    manager: RLMSessionManager,
+    *,
+    profile: RLMToolProfile = DEFAULT_RLM_TOOL_PROFILE,
+    include_tools: Sequence[str] = (),
+    exclude_tools: Sequence[str] = (),
+) -> list[BaseTool]:
+    """Build RLM tools for a profile with optional include/exclude overrides."""
+    _validate_tool_names(include_tools, source="include_tools")
+    _validate_tool_names(exclude_tools, source="exclude_tools")
+    if profile not in _RLM_TOOL_PROFILES:
+        valid_profiles = ", ".join(sorted(_RLM_TOOL_PROFILES))
+        raise ValueError(f"Unknown RLM tool profile '{profile}'. Valid profiles: {valid_profiles}")
+
+    selected: list[str] = list(_RLM_TOOL_PROFILES[profile])
+    for name in include_tools:
+        if name not in selected:
+            selected.append(name)
+
+    excluded = set(exclude_tools)
+    factories = _get_tool_factories()
+    return [factories[name](manager) for name in selected if name not in excluded]
 
 
 # ---------------------------------------------------------------------------
@@ -72,6 +208,40 @@ def _truncate(text: str, max_chars: int = 50_000) -> str:
     if len(text) <= max_chars:
         return text
     return text[:max_chars] + f"\n... [truncated at {max_chars:,} chars]"
+
+
+def _split_csv_values(raw: str) -> list[str]:
+    return [item.strip() for item in raw.split(",") if item.strip()]
+
+
+def _decode_text_bytes(raw: bytes, *, encoding: str, path: Path) -> str:
+    try:
+        return raw.decode(encoding)
+    except UnicodeDecodeError as exc:
+        raise UnicodeDecodeError(
+            exc.encoding,
+            exc.object,
+            exc.start,
+            exc.end,
+            (
+                f"{exc.reason}. Failed to decode '{path}' using encoding "
+                f"'{encoding}'."
+            ),
+        ) from exc
+
+
+def _read_text_from_path(path: Path, *, encoding: str) -> tuple[str, str | None]:
+    suffix = path.suffix.lower()
+    if suffix == ".gz":
+        raw = gzip.decompress(path.read_bytes())
+        return _decode_text_bytes(raw, encoding=encoding, path=path), "gzip"
+    if suffix == ".bz2":
+        raw = bz2.decompress(path.read_bytes())
+        return _decode_text_bytes(raw, encoding=encoding, path=path), "bz2"
+    if suffix in {".xz", ".lzma"}:
+        raw = lzma.decompress(path.read_bytes())
+        return _decode_text_bytes(raw, encoding=encoding, path=path), "lzma"
+    return path.read_text(encoding=encoding), None
 
 
 def _format_pressure_status(status: dict[str, object]) -> str:
@@ -148,7 +318,7 @@ def _record_evidence(
 
 
 # ===========================================================================
-# Context Tools (5)
+# Context Tools
 # ===========================================================================
 
 
@@ -184,6 +354,103 @@ def _create_load_context_tool(manager: RLMSessionManager) -> BaseTool:
         ),
         func=sync_load_context,
         coroutine=async_load_context,
+    )
+
+
+def _create_load_file_context_tool(manager: RLMSessionManager) -> BaseTool:
+    def sync_load_file_context(
+        path: Annotated[str, "Filesystem path to load into an isolated context"],
+        context_id: Annotated[str, "Session identifier"] = "default",
+        format_hint: Annotated[str, "Format hint: auto, text, json, csv, code"] = "auto",
+        line_number_base: Annotated[int, "Line numbering base: 0 or 1"] = 1,
+        encoding: Annotated[str, "Text encoding for file reads"] = "utf-8",
+        max_chars: Annotated[
+            int,
+            "Optional character cap (0 keeps full file)",
+        ] = 0,
+    ) -> str:
+        file_path = Path(path).expanduser()
+        try:
+            resolved_path = file_path.resolve(strict=True)
+        except FileNotFoundError:
+            return f"File not found: {file_path}"
+        except OSError as exc:
+            return f"Unable to resolve path '{file_path}': {exc}"
+
+        if not resolved_path.is_file():
+            return f"Path is not a file: {resolved_path}"
+
+        try:
+            content, compression = _read_text_from_path(resolved_path, encoding=encoding)
+        except UnicodeDecodeError as exc:
+            return (
+                f"Failed to decode '{resolved_path}' using encoding '{encoding}': {exc}. "
+                "Use a different encoding or convert the file to UTF-8 first."
+            )
+        except OSError as exc:
+            return f"Failed to read '{resolved_path}': {exc}"
+        except Exception as exc:
+            return f"Failed to load '{resolved_path}': {exc}"
+
+        truncated = False
+        if max_chars > 0 and len(content) > max_chars:
+            content = content[:max_chars]
+            truncated = True
+
+        meta = manager.create_session(
+            content,
+            context_id=context_id,
+            format_hint=format_hint,
+            line_number_base=line_number_base,
+        )
+        snippet = (
+            f"Loaded file '{resolved_path}' into context '{context_id}' "
+            f"({meta.size_chars:,} chars)."
+        )
+        _record_evidence(
+            manager=manager,
+            session_id=context_id,
+            source="action",
+            source_op="load_file_context",
+            snippet=snippet,
+            file_path=str(resolved_path),
+        )
+
+        msg = f"File '{resolved_path}' loaded into context '{context_id}'. {_fmt_meta(meta)}"
+        if compression:
+            msg += f" [decompressed:{compression}]"
+        if truncated:
+            msg += f" [truncated to {max_chars:,} chars]"
+        return msg
+
+    async def async_load_file_context(
+        path: Annotated[str, "Filesystem path to load into an isolated context"],
+        context_id: Annotated[str, "Session identifier"] = "default",
+        format_hint: Annotated[str, "Format hint: auto, text, json, csv, code"] = "auto",
+        line_number_base: Annotated[int, "Line numbering base: 0 or 1"] = 1,
+        encoding: Annotated[str, "Text encoding for file reads"] = "utf-8",
+        max_chars: Annotated[
+            int,
+            "Optional character cap (0 keeps full file)",
+        ] = 0,
+    ) -> str:
+        return sync_load_file_context(
+            path,
+            context_id,
+            format_hint,
+            line_number_base,
+            encoding,
+            max_chars,
+        )
+
+    return StructuredTool.from_function(
+        name="load_file_context",
+        description=(
+            "Load a file directly into an isolated RLM context without copying file "
+            "contents into the chat transcript."
+        ),
+        func=sync_load_file_context,
+        coroutine=async_load_file_context,
     )
 
 
@@ -315,7 +582,7 @@ def _create_load_session_tool(manager: RLMSessionManager) -> BaseTool:
 
 
 # ===========================================================================
-# Query Tools (5)
+# Query Tools
 # ===========================================================================
 
 
@@ -513,6 +780,118 @@ def _create_semantic_search_tool(manager: RLMSessionManager) -> BaseTool:
     )
 
 
+def _create_chunk_context_tool(manager: RLMSessionManager) -> BaseTool:
+    def sync_chunk_context(
+        context_id: Annotated[str, "Session identifier"] = "default",
+        chunk_size: Annotated[int, "Characters per chunk"] = 5000,
+        overlap: Annotated[int, "Overlap between chunks"] = 200,
+        max_chunks: Annotated[int, "Maximum chunk previews to return"] = 20,
+    ) -> str:
+        if chunk_size <= 0:
+            return "chunk_size must be > 0."
+        if overlap < 0:
+            return "overlap must be >= 0."
+        if overlap >= chunk_size:
+            return "overlap must be < chunk_size."
+        if max_chunks <= 0:
+            return "max_chunks must be > 0."
+
+        session = manager.get_or_create_session(context_id)
+        compact_status = manager._note_tool_activity(context_id, source_op="chunk_context")
+        chunk_fn = session.repl.get_helper("chunk")
+        if chunk_fn is None:
+            return "chunk helper not available"
+
+        try:
+            chunks = chunk_fn(chunk_size=chunk_size, overlap=overlap)
+        except Exception as exc:
+            return f"chunk_context failed: {exc}"
+
+        if not chunks:
+            return f"Context '{context_id}' is empty."
+
+        ctx_text = str(session.repl.get_variable("ctx") or "")
+        step = chunk_size - overlap
+        metadata: list[dict[str, int]] = []
+        if step > 0:
+            for idx, chunk_text in enumerate(chunks):
+                start_char = idx * step
+                end_char = min(len(ctx_text), start_char + len(chunk_text))
+                metadata.append(
+                    {
+                        "index": idx,
+                        "start_char": start_char,
+                        "end_char": end_char,
+                        "size_chars": len(chunk_text),
+                    }
+                )
+        else:
+            cursor = 0
+            for idx, chunk_text in enumerate(chunks):
+                size = len(chunk_text)
+                metadata.append(
+                    {
+                        "index": idx,
+                        "start_char": cursor,
+                        "end_char": cursor + size,
+                        "size_chars": size,
+                    }
+                )
+                cursor += size
+
+        session.chunks = metadata
+
+        shown = min(max_chunks, len(metadata))
+        lines = [
+            (
+                f"Created {len(metadata)} chunks for context '{context_id}' "
+                f"(chunk_size={chunk_size}, overlap={overlap})."
+            )
+        ]
+        for item in metadata[:shown]:
+            lines.append(
+                f"- chunk[{item['index']}]: chars={item['start_char']}-{item['end_char']} "
+                f"size={item['size_chars']}"
+            )
+        if len(metadata) > shown:
+            lines.append(f"... {len(metadata) - shown} additional chunks omitted.")
+
+        snippet = "\n".join(lines)[:300]
+        _record_evidence(
+            manager=manager,
+            session_id=context_id,
+            source="manual",
+            source_op="chunk_context",
+            snippet=snippet,
+        )
+
+        output = "\n".join(lines)
+        output += (
+            f"\n[context_pressure:{_format_pressure_status(manager.get_context_pressure_status(context_id))}]"
+        )
+        if compact_status:
+            output += f" [auto-compacted due to pressure: {compact_status}]"
+        return output
+
+    async def async_chunk_context(
+        context_id: Annotated[str, "Session identifier"] = "default",
+        chunk_size: Annotated[int, "Characters per chunk"] = 5000,
+        overlap: Annotated[int, "Overlap between chunks"] = 200,
+        max_chunks: Annotated[int, "Maximum chunk previews to return"] = 20,
+    ) -> str:
+        return sync_chunk_context(context_id, chunk_size, overlap, max_chunks)
+
+    return StructuredTool.from_function(
+        name="chunk_context",
+        description=(
+            "Split a context into deterministic overlapping character chunks and "
+            "store chunk metadata in-session for follow-up analysis."
+        ),
+        func=sync_chunk_context,
+        coroutine=async_chunk_context,
+    )
+
+
 def _create_cross_context_search_tool(manager: RLMSessionManager) -> BaseTool:
     def sync_cross_context_search(
         pattern: Annotated[str, "Regex pattern to search for across all contexts"],
@@ -632,6 +1011,122 @@ def _create_cross_context_search_tool(manager: RLMSessionManager) -> BaseTool:
         ),
         func=sync_cross_context_search,
         coroutine=async_cross_context_search,
+    )
+
+
+def _create_rg_search_tool(manager: RLMSessionManager) -> BaseTool:
+    def sync_rg_search(
+        pattern: Annotated[str, "Regex pattern to search for with ripgrep"],
+        paths: Annotated[str, "Comma-separated paths to search"] = ".",
+        glob: Annotated[str, "Comma-separated glob filters"] = "",
+        max_results: Annotated[int, "Maximum matching lines to keep"] = 1000,
+        load_context_id: Annotated[
+            str,
+            "Optional context ID to load full search results into",
+        ] = "",
+        ignore_case: Annotated[bool, "Use case-insensitive matching"] = False,
+        fixed_strings: Annotated[bool, "Treat pattern as a literal string"] = False,
+    ) -> str:
+        if not pattern.strip():
+            return "Pattern must be non-empty."
+        if max_results <= 0:
+            return "max_results must be > 0."
+
+        rg_binary = shutil.which("rg")
+        if rg_binary is None:
+            return "ripgrep ('rg') is not available on PATH."
+
+        resolved_paths = _split_csv_values(paths) or ["."]
+        cmd: list[str] = [
+            rg_binary,
+            "--line-number",
+            "--no-heading",
+            "--color=never",
+            "--max-count",
+            str(max_results),
+        ]
+        if ignore_case:
+            cmd.append("--ignore-case")
+        if fixed_strings:
+            cmd.append("--fixed-strings")
+        for item in _split_csv_values(glob):
+            cmd.extend(["--glob", item])
+        cmd.append(pattern)
+        cmd.extend(resolved_paths)
+
+        completed = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        if completed.returncode not in {0, 1}:
+            error_msg = completed.stderr.strip() or completed.stdout.strip() or "unknown error"
+            return f"rg_search failed (exit {completed.returncode}): {error_msg}"
+
+        if completed.returncode == 1 or not completed.stdout.strip():
+            return f"No matches for pattern: {pattern}"
+
+        output = completed.stdout.strip()
+        line_count = output.count("\n") + 1
+        snippet = output[:300]
+
+        context_id = load_context_id.strip() if load_context_id else ""
+        if context_id:
+            meta = manager.create_session(output, context_id=context_id, format_hint="text")
+            _record_evidence(
+                manager=manager,
+                session_id=context_id,
+                source="action",
+                source_op="rg_search",
+                snippet=snippet,
+                pattern=pattern,
+                command_exit_status=completed.returncode,
+            )
+            preview = _truncate(output, max_chars=3000)
+            return (
+                f"rg_search found {line_count} matches. "
+                f"Results loaded into context '{context_id}'. {_fmt_meta(meta)}\n\n"
+                f"{preview}"
+            )
+
+        return (
+            f"rg_search found {line_count} matches across {len(resolved_paths)} path(s).\n"
+            f"{_truncate(output)}"
+        )
+
+    async def async_rg_search(
+        pattern: Annotated[str, "Regex pattern to search for with ripgrep"],
+        paths: Annotated[str, "Comma-separated paths to search"] = ".",
+        glob: Annotated[str, "Comma-separated glob filters"] = "",
+        max_results: Annotated[int, "Maximum matching lines to keep"] = 1000,
+        load_context_id: Annotated[
+            str,
+            "Optional context ID to load full search results into",
+        ] = "",
+        ignore_case: Annotated[bool, "Use case-insensitive matching"] = False,
+        fixed_strings: Annotated[bool, "Treat pattern as a literal string"] = False,
+    ) -> str:
+        return await asyncio.to_thread(
+            sync_rg_search,
+            pattern,
+            paths,
+            glob,
+            max_results,
+            load_context_id,
+            ignore_case,
+            fixed_strings,
+        )
+
+    return StructuredTool.from_function(
+        name="rg_search",
+        description=(
+            "Run ripgrep over local paths and optionally load full hits into an "
+            "RLM context for follow-up search/analysis."
+        ),
+        func=sync_rg_search,
+        coroutine=async_rg_search,
     )
 
 

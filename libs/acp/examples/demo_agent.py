@@ -8,14 +8,14 @@ from acp.schema import (
     SessionMode,
     SessionModeState,
 )
-from deepagents import create_deep_agent
-from deepagents.backends import CompositeBackend, StateBackend
 from deepagents_cli.backends import CLIShellBackend, patch_filesystem_middleware
 from deepagents_cli.config import settings
 from deepagents_cli.local_context import LocalContextMiddleware
 from dotenv import load_dotenv
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph.state import Checkpointer, CompiledStateGraph
+from rlmagents import create_rlm_agent
+from rlmagents._harness.backends import CompositeBackend, StateBackend
 
 from deepagents_acp.server import AgentServerACP, AgentSessionContext
 
@@ -74,7 +74,7 @@ async def _serve_example_agent() -> None:
                 },
             )
 
-        return create_deep_agent(
+        return create_rlm_agent(
             checkpointer=checkpointer,
             backend=create_backend,
             interrupt_on=interrupt_config,

@@ -7,11 +7,17 @@
 # 4. This workflow triggers and publishes to PyPI from release assets
 
 name: "📦 Publish Release"
-run-name: "Publish ${{ github.event.release.tag_name }}"
+run-name: "Publish ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.event.release.tag_name }}"
 
 on:
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to publish (e.g., rlmagents==0.0.2)"
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -20,16 +26,39 @@ permissions:
 jobs:
   publish-release-artifacts:
     # Keep env unset to support PyPI trusted-publishers configured as "Environment: Any".
-    if: startsWith(github.event.release.tag_name, 'rlmagents==')
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.event.release.tag_name, 'rlmagents==')
     runs-on: [self-hosted, Linux]
 
     steps:
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: false
+
       - name: Verify runner prerequisites
         shell: bash
         run: |
           set -eu
           gh --version
-          docker version
+          uv --version
+
+      - name: Resolve release tag
+        id: resolve-tag
+        shell: bash
+        run: |
+          set -eu
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG_NAME="${{ inputs.tag }}"
+          else
+            TAG_NAME="${{ github.event.release.tag_name }}"
+          fi
+
+          if ! [[ "$TAG_NAME" =~ ^rlmagents== ]]; then
+            echo "Error: Tag '$TAG_NAME' does not start with 'rlmagents=='"
+            exit 1
+          fi
+
+          echo "tag=$TAG_NAME" >> "$GITHUB_OUTPUT"
 
       - name: Download release assets
         env:
@@ -37,19 +66,16 @@ jobs:
         run: |
           mkdir -p dist
           cd dist
-          gh release download "${{ github.event.release.tag_name }}" \
+          gh release download "${{ steps.resolve-tag.outputs.tag }}" \
             --repo "${{ github.repository }}" \
             --pattern "*.whl"
-          gh release download "${{ github.event.release.tag_name }}" \
+          gh release download "${{ steps.resolve-tag.outputs.tag }}" \
             --repo "${{ github.repository }}" \
             --pattern "*.tar.gz"
           ls -la
 
       - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          packages-dir: dist/
-          skip-existing: true
-          verbose: true
-          print-hash: true
-          attestations: false
+        shell: bash
+        run: |
+          set -eu
+          uv publish dist/* --trusted-publishing always --check-url https://pypi.org/simple/

@@ -110,7 +110,7 @@ from rlmagents import create_rlm_agent
 # Both main model and sub_query model must be explicitly configured
 agent = create_rlm_agent(
     model="deepseek/deepseek-chat",       # Main agent model (required)
-    sub_query_model="minimax/minimax-01",  # Recursive sub-LLM (optional)
+    sub_query_model="minimax/minimax-01",  # Optional override; default reuses `model`
     sub_query_timeout=120.0,               # Sub-query timeout
     skills=["/skills/analysis/"],          # Skill sources
     memory=["/memory/AGENTS.md"],          # Memory files
@@ -123,6 +123,9 @@ agent = create_rlm_agent(
     interrupt_on={"edit_file": True},      # Human-in-the-loop
 )
 ```
+
+If `sub_query_model` is omitted, recursive `sub_query()` / `llm_query()` calls use the same
+configured provider/model as the main agent.
 
 ## Context Window-First Setup
 

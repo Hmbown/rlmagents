@@ -415,6 +415,7 @@ def create_rlm_agent(
         rlm_include_tools: Additional RLM tools to include on top of the profile.
         rlm_exclude_tools: RLM tools to remove from the selected profile.
         sub_query_model: Optional model used by RLM `sub_query()`/`llm_query()`.
+            If omitted, the primary `model` is reused for sub-queries.
         sub_query_timeout: Timeout in seconds for recursive sub-query calls.
         rlm_system_prompt: Custom RLM workflow prompt.
         enable_rlm_in_subagents: Deprecated compatibility flag.
@@ -436,6 +437,10 @@ def create_rlm_agent(
             model = init_chat_model(model, use_responses_api=True)
         else:
             model = init_chat_model(model)
+
+    # Default recursive sub-query calls to the same model/provider unless
+    # explicitly overridden.
+    effective_sub_query_model = sub_query_model or model
 
     # Compute summarization defaults
     summarization_defaults = _normalize_summarization_defaults(
@@ -463,7 +468,7 @@ def create_rlm_agent(
         rlm_include_tools=rlm_include_tools,
         rlm_exclude_tools=rlm_exclude_tools,
         rlm_system_prompt=rlm_system_prompt,
-        sub_query_model=sub_query_model,
+        sub_query_model=effective_sub_query_model,
         sub_query_timeout=sub_query_timeout,
     )
 
@@ -516,7 +521,7 @@ def create_rlm_agent(
                     rlm_include_tools=rlm_include_tools,
                     rlm_exclude_tools=rlm_exclude_tools,
                     rlm_system_prompt=rlm_system_prompt,
-                    sub_query_model=sub_query_model,
+                    sub_query_model=effective_sub_query_model,
                     sub_query_timeout=sub_query_timeout,
                 )
             )
@@ -571,7 +576,7 @@ def create_rlm_agent(
             rlm_include_tools=rlm_include_tools,
             rlm_exclude_tools=rlm_exclude_tools,
             rlm_system_prompt=rlm_system_prompt,
-            sub_query_model=sub_query_model,
+            sub_query_model=effective_sub_query_model,
             sub_query_timeout=sub_query_timeout,
         )
     )

@@ -15,8 +15,9 @@ RLM design reference: [Recursive Language Model paper](https://arxiv.org/abs/251
 - **Context isolation**: load large artifacts into named sessions and query them without
   polluting the main conversation.
 - **Evidence tracking**: keep provenance for findings and generate cited answers.
-- **Recursive sub-queries**: delegate retrieval/analysis to a secondary model with timeouts
-  and budgets.
+- **Recursive sub-queries**: call `sub_query()` / `llm_query()` inside the REPL. By default,
+  sub-queries reuse the same model/provider API as the main agent unless `sub_query_model`
+  is explicitly set.
 - **Sandboxed Python REPL**: run analysis over loaded contexts and produce structured outputs.
 - **Recipes**: declarative multi-step pipelines for repeatable research and coding tasks.
 

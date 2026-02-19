@@ -369,6 +369,46 @@ def test_create_agent_propagates_sub_query_model_to_subagent_rlm(monkeypatch):
         assert call["sub_query_model"] is sub_query_model
 
 
+def test_create_agent_defaults_sub_query_model_to_main_model(monkeypatch):
+    build_calls = []
+    main_model = Mock()
+    original_builder = graph._build_rlm_middleware
+
+    def fake_create_agent(
+        model,
+        *,
+        system_prompt=None,
+        tools=None,
+        middleware=(),
+        response_format=None,
+        context_schema=None,
+        backend=None,
+        debug=False,
+        name=None,
+        cache=None,
+        **_kwargs,
+    ):
+        return Mock()
+
+    def recording_builder(**kwargs):
+        build_calls.append(kwargs)
+        return original_builder(**kwargs)
+
+    monkeypatch.setattr(graph, "_build_rlm_middleware", recording_builder)
+    monkeypatch.setattr(graph, "create_agent", fake_create_agent)
+    monkeypatch.setattr(graph, "_get_langchain_version", lambda: "1.2.10")
+    _configure_graph_for_test(monkeypatch)
+
+    graph.create_rlm_agent(
+        model=main_model,
+        sub_query_model=None,
+    )
+
+    assert build_calls
+    for call in build_calls:
+        assert call["sub_query_model"] is main_model
+
+
 def test_create_agent_propagates_tool_profile_configuration(monkeypatch):
     build_calls = []
     original_builder = graph._build_rlm_middleware

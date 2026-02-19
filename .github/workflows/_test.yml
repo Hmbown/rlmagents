@@ -25,7 +25,7 @@ jobs:
     defaults:
       run:
         working-directory: ${{ inputs.working-directory }}
-    runs-on: [self-hosted, Linux]
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     name: "Python ${{ inputs.python-version }}"
     steps:

@@ -18,7 +18,7 @@ jobs:
       contents: read
       pull-requests: write
       issues: write
-    runs-on: [self-hosted, Linux]
+    runs-on: ubuntu-latest
 
     steps:
       - name: Label PR based on title

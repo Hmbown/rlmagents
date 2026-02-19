@@ -40,7 +40,7 @@ permissions:
 jobs:
   # Determine working directory from package input
   setup:
-    runs-on: [self-hosted, Linux]
+    runs-on: ubuntu-latest
     outputs:
       package: ${{ steps.parse.outputs.package }}
       working-dir: ${{ steps.parse.outputs.working-dir }}
@@ -68,7 +68,7 @@ jobs:
   build:
     needs: setup
     if: github.ref == 'refs/heads/main' || inputs.dangerous-nonmain-release
-    runs-on: [self-hosted, Linux]
+    runs-on: ubuntu-latest
     permissions:
       contents: read
     env:
@@ -127,7 +127,7 @@ jobs:
     needs:
       - setup
       - build
-    runs-on: [self-hosted, Linux]
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       pull-requests: read
@@ -282,7 +282,7 @@ jobs:
       - setup
       - build
       - collect-contributors
-    runs-on: [self-hosted, Linux]
+    runs-on: ubuntu-latest
     permissions:
       contents: read
     env:
@@ -404,7 +404,7 @@ jobs:
       - setup
       - build
       - pre-release-checks
-    runs-on: [self-hosted, Linux]
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       # This permission is used for trusted publishing:
@@ -448,7 +448,7 @@ jobs:
     needs:
       - setup
       - build
-    runs-on: [self-hosted, Linux]
+    runs-on: ubuntu-latest
     permissions:
       contents: read
     timeout-minutes: 20
@@ -572,7 +572,7 @@ jobs:
       - test-pypi-publish
       - pre-release-checks
     if: needs.pre-release-checks.result == 'success' && needs.test-pypi-publish.result == 'success'
-    runs-on: [self-hosted, Linux]
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       # This permission is used for trusted publishing:
@@ -627,7 +627,7 @@ jobs:
       - pre-release-checks
       - publish
     if: always() && needs.pre-release-checks.result == 'success' && (needs.publish.result == 'success' || needs.publish.result == 'skipped')
-    runs-on: [self-hosted, Linux]
+    runs-on: ubuntu-latest
     permissions:
       # This permission is needed by `ncipollo/release-action` to
       # create the GitHub release/tag

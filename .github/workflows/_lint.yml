@@ -25,7 +25,7 @@ env:
 jobs:
   build:
     name: "Python ${{ inputs.python-version }}"
-    runs-on: [self-hosted, Linux]
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - name: "📋 Checkout Code"

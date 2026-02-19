@@ -20,7 +20,7 @@ from langchain_core.tools import BaseTool, StructuredTool
 from rlmagents.session_manager import RLMSessionManager
 from rlmagents.types import Evidence
 
-RLMToolProfile = Literal["full", "reasoning", "core"]
+RLMToolProfile = Literal["full", "reasoning", "core", "strict"]
 DEFAULT_RLM_TOOL_PROFILE: RLMToolProfile = "full"
 RLM_TOOL_NAMES = frozenset(
     {
@@ -117,6 +117,16 @@ _RLM_TOOL_PROFILES: dict[RLMToolProfile, tuple[str, ...]] = {
         "evaluate_progress",
         "summarize_so_far",
         "get_evidence",
+        "finalize",
+        "get_status",
+    ),
+    "strict": (
+        "load_context",
+        "load_file_context",
+        "exec_python",
+        "get_variable",
+        "peek_context",
+        "search_context",
         "finalize",
         "get_status",
     ),

@@ -35,6 +35,8 @@ _CLI_FILE_MENTION_METADATA_PATTERN = re.compile(
     rf"<{_CLI_FILE_MENTION_METADATA_TAG}>(?P<payload>.*?)</{_CLI_FILE_MENTION_METADATA_TAG}>",
     re.DOTALL,
 )
+_STRICT_PROMPT_EXTERNALIZE_THRESHOLD = 2000
+_STRICT_PROMPT_PREVIEW_CHARS = 200
 
 
 def _append_to_system_message(
@@ -129,6 +131,31 @@ def _extract_cli_file_paths(message_text: str) -> list[str]:
     return deduped
 
 
+def _replace_message_content(message: object, new_content: str) -> object:
+    if isinstance(message, dict):
+        updated = dict(message)
+        updated["content"] = new_content
+        return updated
+
+    model_copy = getattr(message, "model_copy", None)
+    if callable(model_copy):
+        try:
+            return model_copy(update={"content": new_content})
+        except TypeError:
+            pass
+
+    copy_fn = getattr(message, "copy", None)
+    if callable(copy_fn):
+        try:
+            return copy_fn(update={"content": new_content})
+        except TypeError:
+            pass
+
+    if isinstance(message, HumanMessage):
+        return HumanMessage(content=new_content)
+    return message
+
+
 # Backwards-compatible export for tests and integrations that import this symbol.
 _RLM_TOOL_NAMES = RLM_TOOL_NAMES
 
@@ -167,12 +194,15 @@ class RLMMiddleware(AgentMiddleware):
         system_prompt: str | None = None,
         sub_query_model: object | None = None,
         sub_query_timeout: float = 120.0,
+        rlm_max_recursion_depth: int = 1,
     ) -> None:
+        self._strict_mode = tool_profile == "strict"
         self._manager = RLMSessionManager(
             sandbox_config=SandboxConfig(timeout_seconds=sandbox_timeout),
             context_policy=context_policy,
             sub_query_model=sub_query_model,  # type: ignore[arg-type]
             sub_query_timeout=sub_query_timeout,
+            rlm_max_recursion_depth=rlm_max_recursion_depth,
             hist_max_entries=hist_max_entries,
             hist_max_code_chars=hist_max_code_chars,
             hist_max_text_chars=hist_max_text_chars,
@@ -181,9 +211,10 @@ class RLMMiddleware(AgentMiddleware):
         self._inject_exec_metadata = inject_exec_metadata
         self._inject_exec_metadata_max_entries = max(1, inject_exec_metadata_max_entries)
         self._inject_exec_metadata_max_chars = max(200, inject_exec_metadata_max_chars)
-        self._auto_load_threshold = auto_load_threshold
+        self._auto_load_threshold = 0 if self._strict_mode else auto_load_threshold
         self._auto_load_preview_chars = max(auto_load_preview_chars, 0)
         self._custom_prompt = system_prompt
+        self._strict_prompt_externalize_threshold = _STRICT_PROMPT_EXTERNALIZE_THRESHOLD
         self.tools: Sequence[BaseTool] = _build_rlm_tools(
             self._manager,
             profile=tool_profile,
@@ -282,6 +313,51 @@ class RLMMiddleware(AgentMiddleware):
             lines.append(f"Skipped: {'; '.join(failed)}")
         return "\n".join(lines)
 
+    def _strict_externalized_prompt_summary(self, prompt_text: str) -> str:
+        meta = self._manager.create_session(
+            prompt_text,
+            context_id="default",
+            format_hint="auto",
+            line_number_base=1,
+        )
+        preview = prompt_text[:_STRICT_PROMPT_PREVIEW_CHARS]
+        if len(prompt_text) > _STRICT_PROMPT_PREVIEW_CHARS:
+            preview += "... [truncated]"
+        return (
+            "[Strict RLM prompt externalization]\n"
+            "Initial user prompt has been loaded into context_id='default'.\n"
+            f"Format: {meta.format.value}; chars={meta.size_chars:,}; "
+            f"lines={meta.size_lines:,}; tokens~={meta.size_tokens_estimate:,}.\n"
+            f"Prefix: {preview!r}\n"
+            "Use search_context/peek_context/exec_python/get_status on "
+            "context_id='default' instead of relying on raw prompt text."
+        )
+
+    def _externalize_initial_prompt_for_strict(self, request: ModelRequest) -> ModelRequest:
+        if not self._strict_mode or not request.messages:
+            return request
+
+        first_user_index: int | None = None
+        for idx, message in enumerate(request.messages):
+            if _message_is_user(message):
+                first_user_index = idx
+                break
+        if first_user_index is None:
+            return request
+
+        first_user_message = request.messages[first_user_index]
+        text_content = _text_from_message_content(_message_content(first_user_message))
+        if len(text_content) <= self._strict_prompt_externalize_threshold:
+            return request
+
+        replacement = self._strict_externalized_prompt_summary(text_content)
+        updated_messages = list(request.messages)
+        updated_messages[first_user_index] = _replace_message_content(
+            first_user_message,
+            replacement,
+        )
+        return request.override(messages=updated_messages)
+
     def wrap_model_call(
         self,
         request: ModelRequest,
@@ -293,6 +369,7 @@ class RLMMiddleware(AgentMiddleware):
         if prompt:
             system_message = _append_to_system_message(system_message, prompt)
         auto_load_note = self._auto_load_cli_file_mentions(request)
+        request = self._externalize_initial_prompt_for_strict(request)
         if auto_load_note:
             system_message = _append_to_system_message(system_message, auto_load_note)
         exec_metadata_note = self._exec_metadata_note()
@@ -313,6 +390,7 @@ class RLMMiddleware(AgentMiddleware):
         if prompt:
             system_message = _append_to_system_message(system_message, prompt)
         auto_load_note = self._auto_load_cli_file_mentions(request)
+        request = self._externalize_initial_prompt_for_strict(request)
         if auto_load_note:
             system_message = _append_to_system_message(system_message, auto_load_note)
         exec_metadata_note = self._exec_metadata_note()

@@ -367,6 +367,7 @@ def test_create_agent_propagates_sub_query_model_to_subagent_rlm(monkeypatch):
     assert build_calls
     for call in build_calls:
         assert call["sub_query_model"] is sub_query_model
+        assert call["rlm_max_recursion_depth"] == 1
 
 
 def test_create_agent_defaults_sub_query_model_to_main_model(monkeypatch):
@@ -407,6 +408,7 @@ def test_create_agent_defaults_sub_query_model_to_main_model(monkeypatch):
     assert build_calls
     for call in build_calls:
         assert call["sub_query_model"] is main_model
+        assert call["rlm_max_recursion_depth"] == 1
 
 
 def test_create_agent_propagates_tool_profile_configuration(monkeypatch):
@@ -444,6 +446,7 @@ def test_create_agent_propagates_tool_profile_configuration(monkeypatch):
         rlm_include_tools=("run_recipe",),
         rlm_exclude_tools=("semantic_search",),
         auto_load_preview_chars=0,
+        rlm_max_recursion_depth=2,
     )
 
     assert build_calls
@@ -452,3 +455,4 @@ def test_create_agent_propagates_tool_profile_configuration(monkeypatch):
         assert call["rlm_include_tools"] == ("run_recipe",)
         assert call["rlm_exclude_tools"] == ("semantic_search",)
         assert call["auto_load_preview_chars"] == 0
+        assert call["rlm_max_recursion_depth"] == 2

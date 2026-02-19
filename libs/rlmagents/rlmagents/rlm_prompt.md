@@ -36,11 +36,17 @@ When executing Python in a context, these helpers are pre-loaded:
 **Statistics**: `word_count()`, `line_count()`, `char_count()`, `word_frequency()`, `ngrams(n)`
 **Text ops**: `replace_all(old, new)`, `between(start, end)`, `split_by(delim)`, `chunk(size, overlap)`
 **Citations**: `cite(snippet, line_range, note)` and `get_evidence(limit, offset)` -- records and inspects evidence captured in the current REPL session
-**Sub-queries**: `sub_query(prompt, context_slice)` -- delegate to a sub-LLM
+**Sub-queries**: `sub_query(prompt, context_slice)` -- delegate to a recursive sub-RLM call. Each sub-call has its own REPL with `ctx` set to the sub-prompt, can execute code iteratively, and can recursively call `sub_query` itself until completion via `Final`.
 **Completion sentinel**: `set_final(value)` -- sets REPL `Final` for optional paper-style completion
 **Context mutation**: `ctx_append(text)`, `ctx_set(text)` -- modify context in place
 
 The full context is available as `ctx` variable.
+
+## Recursive `sub_query` Notes
+
+- `sub_query` is not a flat one-shot completion in this harness; it runs a mini code-execute-observe loop inside a fresh REPL.
+- Sub-calls can inspect `ctx`, create variables, run loops, and set `Final` to return results.
+- Recursive sub-calls are supported. A configurable max recursion depth limits nesting; once the max depth is reached, sub-calls fall back to a direct model invocation.
 
 ## Multi-Context Support
 

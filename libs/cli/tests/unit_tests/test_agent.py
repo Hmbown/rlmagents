@@ -671,6 +671,7 @@ class TestCreateCliAgentHarnessDispatch:
                     "rlm_auto_inject_exec_metadata": False,
                     "rlm_exec_metadata_max_entries": 2,
                     "rlm_exec_metadata_max_chars": 512,
+                    "rlm_max_recursion_depth": 2,
                 },
             )
 
@@ -680,6 +681,7 @@ class TestCreateCliAgentHarnessDispatch:
         assert kwargs["rlm_auto_inject_exec_metadata"] is False
         assert kwargs["rlm_exec_metadata_max_entries"] == 2
         assert kwargs["rlm_exec_metadata_max_chars"] == 512
+        assert kwargs["rlm_max_recursion_depth"] == 2
 
     def test_rlmagents_harness_rejects_unsupported_rlm_config_key(
         self, tmp_path: Path

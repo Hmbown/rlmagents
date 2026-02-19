@@ -78,6 +78,21 @@ class TestToolBuilding:
         assert "semantic_search" not in names
         assert "rg_search" in names
 
+    def test_strict_profile_has_only_algorithm_one_tools(self):
+        mgr = RLMSessionManager()
+        tools = _build_rlm_tools(mgr, profile="strict")
+        names = {t.name for t in tools}
+        assert names == {
+            "load_context",
+            "load_file_context",
+            "exec_python",
+            "get_variable",
+            "peek_context",
+            "search_context",
+            "finalize",
+            "get_status",
+        }
+
 
 class TestLoadContextTool:
     def _get_tool(self, mgr):

@@ -71,6 +71,7 @@ CLI_ALLOWED_RLM_CONFIG_KEYS = frozenset(
         "rlm_include_tools",
         "rlm_exclude_tools",
         "sub_query_timeout",
+        "rlm_max_recursion_depth",
         "rlm_system_prompt",
     }
 )
@@ -104,10 +105,11 @@ def _build_rlm_config(
     if invalid_keys:
         allowed_keys = ", ".join(sorted(CLI_ALLOWED_RLM_CONFIG_KEYS))
         invalid_keys_text = ", ".join(invalid_keys)
-        raise ValueError(
+        message = (
             "Unsupported `rlm_config` keys: "
             f"{invalid_keys_text}. Allowed keys: {allowed_keys}."
         )
+        raise ValueError(message)
 
     rlm_config.update(dict(overrides))
     return rlm_config

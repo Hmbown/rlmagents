@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "rlmagents"
-version = "0.0.3"
+version = "0.0.4"
 description = "RLM-enhanced agent harness with planning, filesystem, sub-agents, and profile-driven context isolation tools"
 readme = "README.md"
 requires-python = ">=3.11,<4.0"

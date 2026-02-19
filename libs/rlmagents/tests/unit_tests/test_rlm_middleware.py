@@ -70,6 +70,10 @@ class TestRLMMiddleware:
         assert "chunk_context" in names
         assert "rg_search" not in names
 
+    def test_strict_profile_forces_zero_auto_load_threshold(self):
+        mw = RLMMiddleware(tool_profile="strict", auto_load_threshold=9999)
+        assert mw._auto_load_threshold == 0
+
     def test_tool_names_do_not_collide_with_base_tools(self):
         assert _RLM_TOOL_NAMES.isdisjoint(_BASE_TOOL_NAMES)
 
@@ -295,6 +299,46 @@ class TestCliFileMentionAutoLoad:
         assert "missing.py" in system_text
 
 
+class TestStrictPromptExternalization:
+    def test_wrap_model_call_externalizes_oversized_initial_user_prompt(self):
+        long_prompt = "x" * 3000
+        middleware = RLMMiddleware(system_prompt="", tool_profile="strict")
+        captured = _call_wrap_model(middleware, [HumanMessage(content=long_prompt)])
+
+        default_session = middleware.manager.get_session("default")
+        assert default_session is not None
+        assert default_session.repl.get_variable("ctx") == long_prompt
+
+        first_message = captured.messages[0]
+        assert isinstance(first_message, HumanMessage)
+        assert isinstance(first_message.content, str)
+        assert "Strict RLM prompt externalization" in first_message.content
+        assert long_prompt not in first_message.content
+
+    def test_wrap_model_call_does_not_externalize_short_prompt(self):
+        middleware = RLMMiddleware(system_prompt="", tool_profile="strict")
+        short_prompt = "short question"
+        captured = _call_wrap_model(middleware, [HumanMessage(content=short_prompt)])
+
+        assert middleware.manager.get_session("default") is None
+        first_message = captured.messages[0]
+        assert isinstance(first_message, HumanMessage)
+        assert first_message.content == short_prompt
+
+    def test_wrap_model_call_keeps_cli_file_auto_load_in_strict_mode(self, tmp_path: Path):
+        file_path = tmp_path / "strict_file.py"
+        file_path.write_text("print('strict')\n", encoding="utf-8")
+        metadata = _file_mentions_block([str(file_path)])
+        long_prompt = ("y" * 3000) + "\n" + metadata
+
+        middleware = RLMMiddleware(system_prompt="", tool_profile="strict")
+        captured = _call_wrap_model(middleware, [HumanMessage(content=long_prompt)])
+
+        assert middleware.manager.get_session("default") is not None
+        assert any(context_id.startswith("mention_") for context_id in middleware.manager.sessions)
+        assert "CLI @file auto-load" in _system_text(captured.system_message)
+
+
 class TestSessionManager:
     def test_create_session(self):
         sm = RLMSessionManager()
@@ -343,18 +387,86 @@ class TestSessionManager:
         """`sub_query()` should work in async REPL execution without manual loop wiring."""
 
         class _AsyncStubModel:
+            def __init__(self) -> None:
+                self.prompts: list[str] = []
+
             async def ainvoke(self, prompt: str, **kwargs: object) -> AIMessage:
                 del kwargs
-                return AIMessage(content=f"stub:{prompt}")
+                self.prompts.append(prompt)
+                return AIMessage(content="```python\nset_final('stub:ok')\n```")
 
-        sm = RLMSessionManager(sub_query_model=_AsyncStubModel())  # type: ignore[arg-type]
+        model = _AsyncStubModel()
+        sm = RLMSessionManager(sub_query_model=model)  # type: ignore[arg-type]
         sm.create_session("data", context_id="sq-loop")
         session = sm.get_session("sq-loop")
         assert session is not None
 
         result = await session.repl.execute_async("print(sub_query('ping'))")
         assert result.error is None
-        assert "stub:ping" in result.stdout
+        assert "stub:ok" in result.stdout
+        assert any("Return only executable Python code" in prompt for prompt in model.prompts)
+
+    @pytest.mark.asyncio
+    async def test_sub_query_depth_zero_falls_back_to_flat_ainvoke(self) -> None:
+        class _FlatStubModel:
+            def __init__(self) -> None:
+                self.prompts: list[str] = []
+
+            async def ainvoke(self, prompt: str, **kwargs: object) -> AIMessage:
+                del kwargs
+                self.prompts.append(prompt)
+                return AIMessage(content="flat-result")
+
+        model = _FlatStubModel()
+        sm = RLMSessionManager(
+            sub_query_model=model,  # type: ignore[arg-type]
+            rlm_max_recursion_depth=0,
+        )
+        sm.create_session("data", context_id="sq-flat")
+        session = sm.get_session("sq-flat")
+        assert session is not None
+
+        result = await session.repl.execute_async("print(sub_query('ping'))")
+        assert result.error is None
+        assert "flat-result" in result.stdout
+        assert model.prompts == ["ping"]
+
+    @pytest.mark.asyncio
+    async def test_sub_query_at_max_depth_falls_back_to_flat_ainvoke(self) -> None:
+        class _DepthAwareStubModel:
+            def __init__(self) -> None:
+                self.prompts: list[str] = []
+
+            async def ainvoke(self, prompt: str, **kwargs: object) -> AIMessage:
+                del kwargs
+                self.prompts.append(prompt)
+                if "Depth: 0" in prompt:
+                    return AIMessage(
+                        content=(
+                            "```python\n"
+                            "child = sub_query('child question')\n"
+                            "set_final(f'root:{child}')\n"
+                            "```"
+                        )
+                    )
+                if prompt == "child question":
+                    return AIMessage(content="flat-child")
+                return AIMessage(content="flat-default")
+
+        model = _DepthAwareStubModel()
+        sm = RLMSessionManager(
+            sub_query_model=model,  # type: ignore[arg-type]
+            rlm_max_recursion_depth=1,
+        )
+        sm.create_session("data", context_id="sq-depth")
+        session = sm.get_session("sq-depth")
+        assert session is not None
+
+        result = await session.repl.execute_async("print(sub_query('root question'))")
+        assert result.error is None
+        assert "root:flat-child" in result.stdout
+        assert any("Depth: 0" in prompt for prompt in model.prompts)
+        assert "child question" in model.prompts
 
 
 class TestREPLExecution:
@@ -558,7 +670,7 @@ class TestRLMTools:
         class _AsyncStubModel:
             async def ainvoke(self, prompt: str, **kwargs: object) -> AIMessage:
                 del prompt, kwargs
-                return AIMessage(content="subquery-ok")
+                return AIMessage(content="```python\nset_final('subquery-ok')\n```")
 
         from rlmagents.middleware._tools import _build_rlm_tools
 

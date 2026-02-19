@@ -2041,8 +2041,7 @@ class DeepAgentsApp(App):
         else:
             await self._mount_message(
                 ErrorMessage(
-                    "Could not clear default model. "
-                    "Check permissions for ~/.rlmagents/"
+                    "Could not clear default model. Check permissions for ~/.rlmagents/"
                 )
             )
 

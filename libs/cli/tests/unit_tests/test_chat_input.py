@@ -111,7 +111,10 @@ class TestCompletionPopupIntegration:
                 [("/help", "Show help"), ("/clear", "Clear chat")],
                 selected_index=0,
             )
-            # Allow async rebuild to complete
+            # call_after_refresh needs multiple pause cycles to trigger
+            # the refresh and then execute the scheduled callback.
+            await pilot.pause()
+            await pilot.pause()
             await pilot.pause()
 
             # Should have created 2 option widgets
@@ -221,6 +224,9 @@ class TestCompletionPopupClickBubbling:
                 [("/help", "Show help"), ("/clear", "Clear chat")],
                 selected_index=0,
             )
+            # call_after_refresh needs multiple pause cycles
+            await pilot.pause()
+            await pilot.pause()
             await pilot.pause()
 
             # Click on the first option

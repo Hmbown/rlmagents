@@ -1286,7 +1286,7 @@ class TestCreateModelDeepSeekReasonerPatch:
         mock_init_chat_model.return_value = _FakeDeepSeekModel()
         result = create_model("deepseek:deepseek-reasoner")
 
-        payload_fn = result.model._get_request_payload
+        payload_fn = result.model._get_request_payload  # type: ignore[attr-defined]
         payload = payload_fn(
             [
                 HumanMessage(content="hello"),
@@ -1315,7 +1315,7 @@ class TestCreateModelDeepSeekReasonerPatch:
         mock_init_chat_model.return_value = _FakeDeepSeekModel()
         result = create_model("deepseek:deepseek-chat")
 
-        payload_fn = result.model._get_request_payload
+        payload_fn = result.model._get_request_payload  # type: ignore[attr-defined]
         payload = payload_fn(
             [
                 HumanMessage(content="hello"),

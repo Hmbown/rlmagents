@@ -271,9 +271,7 @@ def show_help() -> None:
     console.print(
         "  rlmagents reset --agent AGENT [--target SRC]  Reset an agent's prompt"
     )
-    console.print(
-        "  rlmagents skills <list|create|info>           Manage agent skills"
-    )
+    console.print("  rlmagents skills <list|create|info>           Manage agent skills")
     console.print(
         "  rlmagents threads <list|delete>               Manage conversation threads"
     )

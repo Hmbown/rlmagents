@@ -121,7 +121,7 @@ def _resolve_harness(
 
     persisted_harness = settings.get_agent_harness(assistant_id)
     if persisted_harness == "rlmagents":
-        return persisted_harness
+        return "rlmagents"
     return "rlmagents"
 
 
@@ -278,9 +278,7 @@ def parse_args() -> argparse.Namespace:
         choices=["rlmagents"],
         default=None,
         metavar="TYPE",
-        help=(
-            "Harness to use (default: persisted per-agent setting, else rlmagents)."
-        ),
+        help=("Harness to use (default: persisted per-agent setting, else rlmagents)."),
     )
 
     parser.add_argument(

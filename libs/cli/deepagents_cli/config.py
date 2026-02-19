@@ -235,7 +235,7 @@ def _is_editable_install() -> bool:
         ):
             _editable_cache = False
 
-    return _editable_cache
+    return bool(_editable_cache)
 
 
 def _detect_charset_mode() -> CharsetMode:

@@ -642,3 +642,67 @@ class TestCreateCliAgentHarnessDispatch:
         assert kwargs["rlm_tool_profile"] == "reasoning"
         assert kwargs["auto_load_threshold"] == 1500
         assert kwargs["auto_load_preview_chars"] == 0
+
+    def test_rlmagents_harness_accepts_rlm_config_overrides(
+        self, tmp_path: Path
+    ) -> None:
+        """CLI should forward supported `rlm_config` overrides to RLM agent."""
+        mock_settings = self._make_settings_mock(tmp_path)
+        rlm_agent = Mock()
+        rlm_agent.with_config.return_value = rlm_agent
+
+        with (
+            patch("deepagents_cli.agent.settings", mock_settings),
+            patch("deepagents_cli.agent.list_subagents", return_value=[]),
+            patch(
+                "deepagents_cli.agent.create_rlm_agent",
+                return_value=rlm_agent,
+            ) as mock_create_rlm_agent,
+        ):
+            create_cli_agent(
+                model="fake-model",
+                assistant_id="agent",
+                harness="rlmagents",
+                enable_memory=False,
+                enable_skills=False,
+                enable_shell=False,
+                rlm_config={
+                    "rlm_enable_final_sentinel": True,
+                    "rlm_auto_inject_exec_metadata": False,
+                    "rlm_exec_metadata_max_entries": 2,
+                    "rlm_exec_metadata_max_chars": 512,
+                    "rlm_max_recursion_depth": 2,
+                },
+            )
+
+        assert mock_create_rlm_agent.call_args is not None
+        kwargs = mock_create_rlm_agent.call_args.kwargs
+        assert kwargs["rlm_enable_final_sentinel"] is True
+        assert kwargs["rlm_auto_inject_exec_metadata"] is False
+        assert kwargs["rlm_exec_metadata_max_entries"] == 2
+        assert kwargs["rlm_exec_metadata_max_chars"] == 512
+        assert kwargs["rlm_max_recursion_depth"] == 2
+
+    def test_rlmagents_harness_rejects_unsupported_rlm_config_key(
+        self, tmp_path: Path
+    ) -> None:
+        """CLI should fail fast when `rlm_config` includes unknown keys."""
+        mock_settings = self._make_settings_mock(tmp_path)
+        rlm_agent = Mock()
+        rlm_agent.with_config.return_value = rlm_agent
+
+        with (
+            patch("deepagents_cli.agent.settings", mock_settings),
+            patch("deepagents_cli.agent.list_subagents", return_value=[]),
+            patch("deepagents_cli.agent.create_rlm_agent", return_value=rlm_agent),
+            pytest.raises(ValueError, match="Unsupported `rlm_config` keys"),
+        ):
+            create_cli_agent(
+                model="fake-model",
+                assistant_id="agent",
+                harness="rlmagents",
+                enable_memory=False,
+                enable_skills=False,
+                enable_shell=False,
+                rlm_config={"unknown_key": 1},
+            )

@@ -205,7 +205,10 @@ class TestTerminalBenchScenarios:
     @pytest.mark.asyncio
     async def test_terminal_bench_sub_query_stubbed_path(self) -> None:
         model = _AsyncSubQueryModel("subquery-result")
-        manager = RLMSessionManager(sub_query_model=model)
+        manager = RLMSessionManager(
+            sub_query_model=model,
+            rlm_max_recursion_depth=0,
+        )
         manager.create_session("line 1\nline 2", context_id="query")
         session = manager.get_session("query")
 

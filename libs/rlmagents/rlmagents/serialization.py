@@ -56,6 +56,10 @@ class Session:
         last_compaction_reason: str | None = None,
         compacted_state: str | None = None,
         compacted_state_at: str | None = None,
+        hist: list[dict[str, Any]] | None = None,
+        max_hist_entries: int = 64,
+        max_hist_code_chars: int = 280,
+        max_hist_text_chars: int = 200,
     ) -> None:
         self.repl = repl
         self.meta = meta
@@ -77,6 +81,11 @@ class Session:
         self.last_compaction_reason = last_compaction_reason
         self.compacted_state = compacted_state
         self.compacted_state_at = compacted_state_at
+        self.max_hist_entries = max(1, max_hist_entries)
+        self.max_hist_code_chars = max(40, max_hist_code_chars)
+        self.max_hist_text_chars = max(40, max_hist_text_chars)
+        self.hist = [self._normalize_hist_entry(item) for item in list(hist or [])]
+        self._prune_hist()
 
     def add_evidence(self, ev: Evidence, preserve_snippets: set[str] | None = None) -> None:
         """Add evidence and prune if evidence limits are exceeded."""
@@ -145,6 +154,45 @@ class Session:
             key=lambda item: item[0],
         )
         self.evidence = [ev for _, ev in merged]
+
+    @staticmethod
+    def _truncate_hist_text(value: object, max_chars: int) -> str:
+        text = str(value)
+        if len(text) <= max_chars:
+            return text
+        suffix = "... [truncated]"
+        keep = max(max_chars - len(suffix), 0)
+        return text[:keep] + suffix
+
+    def _normalize_hist_entry(self, entry: object) -> dict[str, Any]:
+        if not isinstance(entry, dict):
+            return {
+                "kind": "unknown",
+                "error": "invalid history entry",
+            }
+
+        normalized: dict[str, Any] = {}
+        for key, value in entry.items():
+            if key in {"code", "code_preview"}:
+                normalized[key] = self._truncate_hist_text(value, self.max_hist_code_chars)
+                continue
+            if key in {"stdout_preview", "stderr_preview", "error", "final_preview"}:
+                normalized[key] = self._truncate_hist_text(value, self.max_hist_text_chars)
+                continue
+            normalized[key] = value
+        return normalized
+
+    def _prune_hist(self) -> None:
+        if len(self.hist) <= self.max_hist_entries:
+            return
+        self.hist = self.hist[-self.max_hist_entries :]
+
+    def append_hist(self, entry: dict[str, Any]) -> dict[str, Any]:
+        """Append a bounded root-loop history entry."""
+        normalized = self._normalize_hist_entry(entry)
+        self.hist.append(normalized)
+        self._prune_hist()
+        return normalized
 
 
 # ---------------------------------------------------------------------------
@@ -243,6 +291,12 @@ def _session_to_payload(
             "compacted_state": session.compacted_state,
             "compacted_state_at": session.compacted_state_at,
         },
+        "hist_limits": {
+            "max_hist_entries": session.max_hist_entries,
+            "max_hist_code_chars": session.max_hist_code_chars,
+            "max_hist_text_chars": session.max_hist_text_chars,
+        },
+        "hist": [dict(item) for item in session.hist],
         "evidence": [
             {
                 "source": ev.source,
@@ -358,6 +412,15 @@ def _session_from_payload(
     context_pressure = obj.get("context_pressure", {})
     if not isinstance(context_pressure, dict):
         context_pressure = {}
+    hist_limits = obj.get("hist_limits", {})
+    if not isinstance(hist_limits, dict):
+        hist_limits = {}
+    raw_hist = obj.get("hist")
+    hist: list[dict[str, Any]] = []
+    if isinstance(raw_hist, list):
+        for item in raw_hist:
+            if isinstance(item, dict):
+                hist.append(dict(item))
 
     session = Session(
         repl=repl,
@@ -380,6 +443,10 @@ def _session_from_payload(
         last_compaction_reason=context_pressure.get("last_compaction_reason"),
         compacted_state=context_pressure.get("compacted_state"),
         compacted_state_at=context_pressure.get("compacted_state_at"),
+        hist=hist,
+        max_hist_entries=int(hist_limits.get("max_hist_entries") or 64),
+        max_hist_code_chars=int(hist_limits.get("max_hist_code_chars") or 280),
+        max_hist_text_chars=int(hist_limits.get("max_hist_text_chars") or 200),
     )
 
     ev_list = obj.get("evidence")

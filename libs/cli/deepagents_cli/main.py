@@ -296,6 +296,16 @@ def parse_args() -> argparse.Namespace:
         '(e.g., \'{"temperature": 0.7, "max_tokens": 4096}\'). '
         "These take priority, overriding config file values.",
     )
+    parser.add_argument(
+        "--rlm-config",
+        metavar="JSON",
+        help=(
+            "Advanced RLM config overrides as a JSON object forwarded to "
+            "`create_rlm_agent` (e.g., "
+            '\'{"rlm_enable_final_sentinel": true, '
+            '"rlm_auto_inject_exec_metadata": false}\').'
+        ),
+    )
 
     parser.add_argument(
         "--default-model",
@@ -412,6 +422,7 @@ async def run_textual_cli_async(
     sandbox_setup: str | None = None,
     model_name: str | None = None,
     model_params: dict[str, Any] | None = None,
+    rlm_config: dict[str, Any] | None = None,
     thread_id: str | None = None,
     is_resumed: bool = False,
     initial_prompt: str | None = None,
@@ -431,6 +442,7 @@ async def run_textual_cli_async(
         model_params: Extra kwargs from `--model-params` to pass to the model.
 
             These override config file values.
+        rlm_config: Optional RLM override kwargs forwarded to `create_cli_agent`.
         thread_id: Thread ID to use (new or resumed)
         is_resumed: Whether this is a resumed session
         initial_prompt: Optional prompt to auto-submit when session starts
@@ -495,6 +507,7 @@ async def run_textual_cli_async(
                 sandbox_type=sandbox_type if sandbox_type != "none" else None,
                 auto_approve=auto_approve,
                 checkpointer=checkpointer,
+                rlm_config=rlm_config,
             )
         except Exception as e:
             error_text = Text("❌ Failed to create agent: ", style="red")
@@ -518,6 +531,7 @@ async def run_textual_cli_async(
                 tools=tools,
                 sandbox=sandbox_backend,
                 sandbox_type=sandbox_type if sandbox_type != "none" else None,
+                rlm_config=rlm_config,
             )
         finally:
             # Clean up sandbox after app exits (success or error)
@@ -681,6 +695,22 @@ def cli_main() -> None:
                 )
                 sys.exit(1)
 
+        rlm_config: dict[str, Any] | None = None
+        raw_rlm_config = getattr(args, "rlm_config", None)
+        if raw_rlm_config:
+            try:
+                rlm_config = json.loads(raw_rlm_config)
+            except json.JSONDecodeError as e:
+                console.print(
+                    f"[bold red]Error:[/bold red] --rlm-config is not valid JSON: {e}"
+                )
+                sys.exit(1)
+            if not isinstance(rlm_config, dict):
+                console.print(
+                    "[bold red]Error:[/bold red] --rlm-config must be a JSON object"
+                )
+                sys.exit(1)
+
         apply_stdin_pipe(args)
 
         if (args.quiet or args.no_stream) and not args.non_interactive_message:
@@ -788,6 +818,7 @@ def cli_main() -> None:
                     harness=resolved_harness,
                     model_name=getattr(args, "model", None),
                     model_params=model_params,
+                    rlm_config=rlm_config,
                     sandbox_type=args.sandbox,
                     sandbox_id=args.sandbox_id,
                     sandbox_setup=getattr(args, "sandbox_setup", None),
@@ -879,6 +910,7 @@ def cli_main() -> None:
                         sandbox_setup=getattr(args, "sandbox_setup", None),
                         model_name=getattr(args, "model", None),
                         model_params=model_params,
+                        rlm_config=rlm_config,
                         thread_id=thread_id,
                         is_resumed=is_resumed,
                         initial_prompt=getattr(args, "initial_prompt", None),

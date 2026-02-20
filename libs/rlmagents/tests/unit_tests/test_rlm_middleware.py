@@ -70,6 +70,10 @@ class TestRLMMiddleware:
         assert "chunk_context" in names
         assert "rg_search" not in names
 
+    def test_strict_profile_forces_zero_auto_load_threshold(self):
+        mw = RLMMiddleware(tool_profile="strict", auto_load_threshold=9999)
+        assert mw._auto_load_threshold == 0
+
     def test_tool_names_do_not_collide_with_base_tools(self):
         assert _RLM_TOOL_NAMES.isdisjoint(_BASE_TOOL_NAMES)
 
@@ -170,6 +174,48 @@ def _call_wrap_model(middleware: RLMMiddleware, messages: list) -> ModelRequest:
     return captured_request
 
 
+class TestExecMetadataInjection:
+    def test_wrap_model_call_injects_exec_metadata_by_default(self):
+        middleware = RLMMiddleware(system_prompt="")
+        middleware.manager.create_session("hello world", context_id="meta")
+        exec_tool = next(t for t in middleware.tools if t.name == "exec_python")
+        exec_tool.invoke({"code": "print('alpha')", "context_id": "meta"})
+
+        captured = _call_wrap_model(middleware, [HumanMessage(content="continue")])
+        system_text = _system_text(captured.system_message)
+        assert "RLM per-iteration execution metadata" in system_text
+        assert "exec_python" in system_text
+
+    def test_wrap_model_call_exec_metadata_injection_can_be_disabled(self):
+        middleware = RLMMiddleware(system_prompt="", inject_exec_metadata=False)
+        middleware.manager.create_session("hello world", context_id="meta")
+        exec_tool = next(t for t in middleware.tools if t.name == "exec_python")
+        exec_tool.invoke({"code": "print('alpha')", "context_id": "meta"})
+
+        captured = _call_wrap_model(middleware, [HumanMessage(content="continue")])
+        system_text = _system_text(captured.system_message)
+        assert "RLM per-iteration execution metadata" not in system_text
+
+    def test_wrap_model_call_exec_metadata_injection_is_bounded(self):
+        middleware = RLMMiddleware(
+            system_prompt="",
+            inject_exec_metadata_max_entries=1,
+            inject_exec_metadata_max_chars=260,
+        )
+        middleware.manager.create_session("hello world", context_id="meta")
+        exec_tool = next(t for t in middleware.tools if t.name == "exec_python")
+        exec_tool.invoke({"code": "print('first')", "context_id": "meta"})
+        exec_tool.invoke(
+            {"code": "print('second with longer output to test metadata truncation')", "context_id": "meta"}
+        )
+
+        captured = _call_wrap_model(middleware, [HumanMessage(content="continue")])
+        system_text = _system_text(captured.system_message)
+        assert "RLM per-iteration execution metadata" in system_text
+        assert system_text.count("exec_python") == 1
+        assert len(system_text) <= 260
+
+
 class TestCliFileMentionAutoLoad:
     def test_wrap_model_call_auto_loads_cli_file_mentions(self, tmp_path: Path):
         file_path = tmp_path / "sample.py"
@@ -253,6 +299,46 @@ class TestCliFileMentionAutoLoad:
         assert "missing.py" in system_text
 
 
+class TestStrictPromptExternalization:
+    def test_wrap_model_call_externalizes_oversized_initial_user_prompt(self):
+        long_prompt = "x" * 3000
+        middleware = RLMMiddleware(system_prompt="", tool_profile="strict")
+        captured = _call_wrap_model(middleware, [HumanMessage(content=long_prompt)])
+
+        default_session = middleware.manager.get_session("default")
+        assert default_session is not None
+        assert default_session.repl.get_variable("ctx") == long_prompt
+
+        first_message = captured.messages[0]
+        assert isinstance(first_message, HumanMessage)
+        assert isinstance(first_message.content, str)
+        assert "Strict RLM prompt externalization" in first_message.content
+        assert long_prompt not in first_message.content
+
+    def test_wrap_model_call_does_not_externalize_short_prompt(self):
+        middleware = RLMMiddleware(system_prompt="", tool_profile="strict")
+        short_prompt = "short question"
+        captured = _call_wrap_model(middleware, [HumanMessage(content=short_prompt)])
+
+        assert middleware.manager.get_session("default") is None
+        first_message = captured.messages[0]
+        assert isinstance(first_message, HumanMessage)
+        assert first_message.content == short_prompt
+
+    def test_wrap_model_call_keeps_cli_file_auto_load_in_strict_mode(self, tmp_path: Path):
+        file_path = tmp_path / "strict_file.py"
+        file_path.write_text("print('strict')\n", encoding="utf-8")
+        metadata = _file_mentions_block([str(file_path)])
+        long_prompt = ("y" * 3000) + "\n" + metadata
+
+        middleware = RLMMiddleware(system_prompt="", tool_profile="strict")
+        captured = _call_wrap_model(middleware, [HumanMessage(content=long_prompt)])
+
+        assert middleware.manager.get_session("default") is not None
+        assert any(context_id.startswith("mention_") for context_id in middleware.manager.sessions)
+        assert "CLI @file auto-load" in _system_text(captured.system_message)
+
+
 class TestSessionManager:
     def test_create_session(self):
         sm = RLMSessionManager()
@@ -301,18 +387,86 @@ class TestSessionManager:
         """`sub_query()` should work in async REPL execution without manual loop wiring."""
 
         class _AsyncStubModel:
+            def __init__(self) -> None:
+                self.prompts: list[str] = []
+
             async def ainvoke(self, prompt: str, **kwargs: object) -> AIMessage:
                 del kwargs
-                return AIMessage(content=f"stub:{prompt}")
+                self.prompts.append(prompt)
+                return AIMessage(content="```python\nset_final('stub:ok')\n```")
 
-        sm = RLMSessionManager(sub_query_model=_AsyncStubModel())  # type: ignore[arg-type]
+        model = _AsyncStubModel()
+        sm = RLMSessionManager(sub_query_model=model)  # type: ignore[arg-type]
         sm.create_session("data", context_id="sq-loop")
         session = sm.get_session("sq-loop")
         assert session is not None
 
         result = await session.repl.execute_async("print(sub_query('ping'))")
         assert result.error is None
-        assert "stub:ping" in result.stdout
+        assert "stub:ok" in result.stdout
+        assert any("Return only executable Python code" in prompt for prompt in model.prompts)
+
+    @pytest.mark.asyncio
+    async def test_sub_query_depth_zero_falls_back_to_flat_ainvoke(self) -> None:
+        class _FlatStubModel:
+            def __init__(self) -> None:
+                self.prompts: list[str] = []
+
+            async def ainvoke(self, prompt: str, **kwargs: object) -> AIMessage:
+                del kwargs
+                self.prompts.append(prompt)
+                return AIMessage(content="flat-result")
+
+        model = _FlatStubModel()
+        sm = RLMSessionManager(
+            sub_query_model=model,  # type: ignore[arg-type]
+            rlm_max_recursion_depth=0,
+        )
+        sm.create_session("data", context_id="sq-flat")
+        session = sm.get_session("sq-flat")
+        assert session is not None
+
+        result = await session.repl.execute_async("print(sub_query('ping'))")
+        assert result.error is None
+        assert "flat-result" in result.stdout
+        assert model.prompts == ["ping"]
+
+    @pytest.mark.asyncio
+    async def test_sub_query_at_max_depth_falls_back_to_flat_ainvoke(self) -> None:
+        class _DepthAwareStubModel:
+            def __init__(self) -> None:
+                self.prompts: list[str] = []
+
+            async def ainvoke(self, prompt: str, **kwargs: object) -> AIMessage:
+                del kwargs
+                self.prompts.append(prompt)
+                if "Depth: 0" in prompt:
+                    return AIMessage(
+                        content=(
+                            "```python\n"
+                            "child = sub_query('child question')\n"
+                            "set_final(f'root:{child}')\n"
+                            "```"
+                        )
+                    )
+                if prompt == "child question":
+                    return AIMessage(content="flat-child")
+                return AIMessage(content="flat-default")
+
+        model = _DepthAwareStubModel()
+        sm = RLMSessionManager(
+            sub_query_model=model,  # type: ignore[arg-type]
+            rlm_max_recursion_depth=1,
+        )
+        sm.create_session("data", context_id="sq-depth")
+        session = sm.get_session("sq-depth")
+        assert session is not None
+
+        result = await session.repl.execute_async("print(sub_query('root question'))")
+        assert result.error is None
+        assert "root:flat-child" in result.stdout
+        assert any("Depth: 0" in prompt for prompt in model.prompts)
+        assert "child question" in model.prompts
 
 
 class TestREPLExecution:
@@ -445,6 +599,29 @@ class TestSerialization:
         assert loaded.repl.get_variable("ctx") == "test data for serialization"
         assert len(loaded.evidence) == 1
 
+    def test_save_and_load_preserves_hist(self, tmp_path):
+        from rlmagents.middleware._tools import _build_rlm_tools
+
+        sm = RLMSessionManager(hist_max_entries=5)
+        sm.create_session("test data for history", context_id="ser_hist")
+        tools = {t.name: t for t in _build_rlm_tools(sm)}
+        tools["exec_python"].invoke({"code": "print('hist-one')", "context_id": "ser_hist"})
+
+        path = tmp_path / "session_hist.json"
+        payload = sm.save_session(context_id="ser_hist", path=str(path))
+        assert "hist" in payload
+        assert len(payload["hist"]) == 1
+        assert payload["hist"][0]["kind"] == "exec_python"
+
+        sm2 = RLMSessionManager()
+        sm2.load_session_from_file(str(path), context_id="loaded_hist")
+        loaded = sm2.get_session("loaded_hist")
+        assert loaded is not None
+        assert len(loaded.hist) == 1
+        hist_var = loaded.repl.get_variable("hist")
+        assert isinstance(hist_var, list)
+        assert hist_var[0]["kind"] == "exec_python"
+
 
 class TestRLMTools:
     """Test individual RLM tool invocations."""
@@ -493,7 +670,7 @@ class TestRLMTools:
         class _AsyncStubModel:
             async def ainvoke(self, prompt: str, **kwargs: object) -> AIMessage:
                 del prompt, kwargs
-                return AIMessage(content="subquery-ok")
+                return AIMessage(content="```python\nset_final('subquery-ok')\n```")
 
         from rlmagents.middleware._tools import _build_rlm_tools
 

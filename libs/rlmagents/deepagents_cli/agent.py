@@ -3,18 +3,17 @@
 import os
 import shutil
 import tempfile
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
+from deepagents_cli.backends import CLIShellBackend, patch_filesystem_middleware
 from rlmagents import create_rlm_agent
 from rlmagents._harness.backends import CompositeBackend  # noqa: PLC2701
 from rlmagents._harness.backends.filesystem import FilesystemBackend  # noqa: PLC2701
 from rlmagents._harness.backends.protocol import SandboxBackendProtocol
 from rlmagents._harness.memory import MemoryMiddleware  # noqa: PLC2701
 from rlmagents._harness.skills import SkillsMiddleware  # noqa: PLC2701
-
-from deepagents_cli.backends import CLIShellBackend, patch_filesystem_middleware
 
 if TYPE_CHECKING:
     from rlmagents._harness.subagents import (
@@ -53,6 +52,66 @@ HarnessType = Literal["rlmagents"]
 CLI_DEFAULT_RLM_TOOL_PROFILE = "reasoning"
 CLI_DEFAULT_RLM_AUTO_LOAD_THRESHOLD = 1500
 CLI_DEFAULT_RLM_AUTO_LOAD_PREVIEW_CHARS = 0
+CLI_DEFAULT_RLM_SYSTEM_PROMPT = ""
+CLI_ALLOWED_RLM_CONFIG_KEYS = frozenset(
+    {
+        "sandbox_timeout",
+        "context_policy",
+        "rlm_hist_max_entries",
+        "rlm_hist_max_code_chars",
+        "rlm_hist_max_text_chars",
+        "rlm_enable_final_sentinel",
+        "rlm_auto_inject_exec_metadata",
+        "rlm_exec_metadata_max_entries",
+        "rlm_exec_metadata_max_chars",
+        "auto_load_threshold",
+        "auto_load_preview_chars",
+        "rlm_tool_profile",
+        "rlm_include_tools",
+        "rlm_exclude_tools",
+        "sub_query_timeout",
+        "rlm_max_recursion_depth",
+        "rlm_system_prompt",
+    }
+)
+
+
+def _build_rlm_config(
+    overrides: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Resolve CLI RLM defaults with optional validated overrides.
+
+    Args:
+        overrides: Optional mapping of RLM kwargs forwarded to
+            `create_rlm_agent`.
+
+    Returns:
+        RLM kwargs with CLI defaults applied.
+
+    Raises:
+        ValueError: If unsupported keys are provided.
+    """
+    rlm_config: dict[str, Any] = {
+        "rlm_tool_profile": CLI_DEFAULT_RLM_TOOL_PROFILE,
+        "auto_load_threshold": CLI_DEFAULT_RLM_AUTO_LOAD_THRESHOLD,
+        "auto_load_preview_chars": CLI_DEFAULT_RLM_AUTO_LOAD_PREVIEW_CHARS,
+        "rlm_system_prompt": CLI_DEFAULT_RLM_SYSTEM_PROMPT,
+    }
+    if not overrides:
+        return rlm_config
+
+    invalid_keys = sorted(set(overrides).difference(CLI_ALLOWED_RLM_CONFIG_KEYS))
+    if invalid_keys:
+        allowed_keys = ", ".join(sorted(CLI_ALLOWED_RLM_CONFIG_KEYS))
+        invalid_keys_text = ", ".join(invalid_keys)
+        message = (
+            "Unsupported `rlm_config` keys: "
+            f"{invalid_keys_text}. Allowed keys: {allowed_keys}."
+        )
+        raise ValueError(message)
+
+    rlm_config.update(dict(overrides))
+    return rlm_config
 
 
 def list_agents() -> None:
@@ -417,6 +476,7 @@ def create_cli_agent(
     enable_skills: bool = True,
     enable_shell: bool = True,
     checkpointer: BaseCheckpointSaver | None = None,
+    rlm_config: Mapping[str, Any] | None = None,
 ) -> tuple[Pregel, CompositeBackend]:
     """Create a CLI-configured agent with flexible options.
 
@@ -454,6 +514,12 @@ def create_cli_agent(
 
             If `None`, uses `InMemorySaver` (no persistence across
             CLI invocations).
+        rlm_config: Optional RLM tuning overrides forwarded to
+            `create_rlm_agent`.
+
+            Supported keys include history bounds, metadata injection controls,
+            Final sentinel toggle, tool profile/include/exclude, context policy,
+            and timeout settings.
 
     Returns:
         2-tuple of `(agent_graph, backend)`
@@ -647,6 +713,8 @@ def create_cli_agent(
         msg = f"Unsupported harness: {harness!r}"
         raise ValueError(msg)
 
+    resolved_rlm_config = _build_rlm_config(rlm_config)
+
     # Enable RLM recursive sub_query()/llm_query() by default in CLI mode.
     # If the provided model is an instantiated BaseChatModel, reuse it for
     # sub-queries so the full RLM toolchain is available.
@@ -661,9 +729,6 @@ def create_cli_agent(
         checkpointer=final_checkpointer,
         subagents=custom_subagents or None,
         sub_query_model=sub_query_model,
-        rlm_tool_profile=CLI_DEFAULT_RLM_TOOL_PROFILE,
-        auto_load_threshold=CLI_DEFAULT_RLM_AUTO_LOAD_THRESHOLD,
-        auto_load_preview_chars=CLI_DEFAULT_RLM_AUTO_LOAD_PREVIEW_CHARS,
-        rlm_system_prompt="",
+        **resolved_rlm_config,
     ).with_config(config)
     return agent, composite_backend

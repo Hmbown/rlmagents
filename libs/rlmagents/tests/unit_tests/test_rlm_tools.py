@@ -78,6 +78,21 @@ class TestToolBuilding:
         assert "semantic_search" not in names
         assert "rg_search" in names
 
+    def test_strict_profile_has_only_algorithm_one_tools(self):
+        mgr = RLMSessionManager()
+        tools = _build_rlm_tools(mgr, profile="strict")
+        names = {t.name for t in tools}
+        assert names == {
+            "load_context",
+            "load_file_context",
+            "exec_python",
+            "get_variable",
+            "peek_context",
+            "search_context",
+            "finalize",
+            "get_status",
+        }
+
 
 class TestLoadContextTool:
     def _get_tool(self, mgr):
@@ -240,6 +255,55 @@ class TestExecPythonTool:
         tool = self._get_tool(mgr)
         result = tool.invoke({"code": "1/0", "context_id": "e"})
         assert "ERROR" in result or "ZeroDivision" in result
+
+    def test_exec_records_bounded_hist_and_repl_artifact(self):
+        mgr = RLMSessionManager(
+            hist_max_entries=2,
+            hist_max_code_chars=80,
+            hist_max_text_chars=80,
+        )
+        mgr.create_session("test content", context_id="e")
+        tool = self._get_tool(mgr)
+
+        tool.invoke({"code": "print('one')", "context_id": "e"})
+        tool.invoke({"code": "print('two')", "context_id": "e"})
+        tool.invoke({"code": "print('three')", "context_id": "e"})
+
+        session = mgr.get_session("e")
+        assert session is not None
+        assert len(session.hist) == 2
+        assert session.hist[-1]["kind"] == "exec_python"
+        assert session.hist[-1]["stdout_chars"] >= 1
+
+        hist_var = session.repl.get_variable("hist")
+        assert isinstance(hist_var, list)
+        assert len(hist_var) == 2
+
+    def test_exec_final_sentinel_disabled_by_default(self):
+        mgr = RLMSessionManager()
+        mgr.create_session("data", context_id="e")
+        tool = self._get_tool(mgr)
+
+        result = tool.invoke({"code": "set_final('done')", "context_id": "e"})
+        assert "## Final Answer" not in result
+
+        session = mgr.get_session("e")
+        assert session is not None
+        assert session.repl.get_variable("Final") == "done"
+
+    def test_exec_final_sentinel_enabled(self):
+        mgr = RLMSessionManager(enable_final_sentinel=True)
+        mgr.create_session("data", context_id="e")
+        tool = self._get_tool(mgr)
+
+        result = tool.invoke({"code": "set_final('sentinel answer')", "context_id": "e"})
+        assert "## Final Answer" in result
+        assert "sentinel answer" in result
+        assert "Final sentinel" in result
+
+        session = mgr.get_session("e")
+        assert session is not None
+        assert session.repl.get_variable("Final") is None
 
 
 class TestPeekContextTool:

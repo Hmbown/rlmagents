@@ -29,8 +29,9 @@ As of `rlmagents==0.0.3`, a single install provides both:
   execution output (`exec_python`).
 - **Symbolic recursive calls** -- `sub_query()` / `llm_query()` can be invoked from
   inside REPL code for recursive decomposition.
-- **Explicit completion step** -- responses are concluded with `finalize` (analogous
-  to setting `Final` in Algorithm 1).
+- **Explicit + sentinel completion** -- responses can conclude with `finalize`,
+  and optional `Final`/`set_final(...)` sentinel mode provides a built-in
+  paper-style finish path.
 
 ### RLMAgents additions (beyond the paper)
 
@@ -128,15 +129,18 @@ scope added by this project.
 
 ## Paper-parity TODOs
 
-These are the main areas where the current implementation is still partial
-relative to the paper's idealized scaffold:
+Implemented in the current scaffold:
 
-- [ ] Add an explicit, inspectable root-loop history artifact (`hist`) that
-      captures executed code plus bounded execution metadata across iterations.
-- [ ] Auto-inject constant-size per-iteration execution metadata into root model
-      context by default, instead of relying only on explicit tool calls.
-- [ ] Add an optional built-in finish sentinel (paper `Final` style) so loop
-      termination can be enforced without requiring an explicit `finalize` call.
+- [x] Explicit, inspectable root-loop history artifact (`hist`) with bounded
+      retention and truncation caps. It is persisted in memory-pack
+      serialization and mirrored into REPL session state.
+- [x] Constant-size per-iteration execution metadata auto-injection into root
+      model context by default (configurable via middleware/agent options).
+- [x] Optional built-in `Final` sentinel path: when enabled, setting REPL
+      `Final` (or calling `set_final(...)`) yields finalize-style completion
+      without requiring an explicit `finalize()` call.
+
+Remaining scope in this section: none.
 
 ## Development
 

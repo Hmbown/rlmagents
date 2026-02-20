@@ -10,7 +10,7 @@ def _resolve_version() -> str:
             return version(package_name)
         except PackageNotFoundError:
             continue
-    return "0.0.3"
+    return "0.0.4"
 
 
 __version__ = _resolve_version()

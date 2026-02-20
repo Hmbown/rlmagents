@@ -251,6 +251,22 @@ class TestModelParamsArgument:
             assert parsed.model_params == '{"temperature": 0.5, "max_tokens": 2048}'
 
 
+class TestRlmConfigArgument:
+    """Tests for --rlm-config argument parsing."""
+
+    def test_stores_json_string(self, mock_argv: MockArgvType) -> None:
+        """Test --rlm-config stores the raw JSON string."""
+        with mock_argv("--rlm-config", '{"rlm_enable_final_sentinel": true}'):
+            parsed = parse_args()
+            assert parsed.rlm_config == '{"rlm_enable_final_sentinel": true}'
+
+    def test_not_specified_is_none(self, mock_argv: MockArgvType) -> None:
+        """Test rlm_config is None when not provided."""
+        with mock_argv():
+            parsed = parse_args()
+            assert parsed.rlm_config is None
+
+
 def _make_args(
     *,
     non_interactive_message: str | None = None,

@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from collections import OrderedDict
 from datetime import datetime
 from pathlib import Path
@@ -44,6 +45,21 @@ __all__ = [
 
 _FORMAT_CACHE_MAX = 64
 _FORMAT_CACHE: OrderedDict[tuple[int, int, str], ContentFormat] = OrderedDict()
+_CODE_BLOCK_PATTERN = re.compile(
+    r"```(?:python|py)?\s*(?P<code>.*?)```",
+    re.IGNORECASE | re.DOTALL,
+)
+_FINAL_CALL_PATTERN = re.compile(r"^FINAL\((?P<value>.+)\)$", re.DOTALL)
+_FINAL_VAR_CALL_PATTERN = re.compile(r"^FINAL_VAR\((?P<value>[A-Za-z_][A-Za-z0-9_]*)\)$")
+_SUB_QUERY_MAX_ITERATIONS = 24
+_SUB_QUERY_RECURSIVE_SYSTEM_PROMPT = (
+    "You are inside a recursive RLM sub-query REPL. "
+    "The context is available as `ctx`. "
+    "On each turn, output Python code only. "
+    "Use `search(...)`, `peek(...)`, `sub_query(...)`, and helper functions as needed. "
+    "When done, set `Final` (e.g. `set_final(result)` or `Final = result`). "
+    "Do not output prose."
+)
 
 
 def _running_loop_or_none() -> asyncio.AbstractEventLoop | None:
@@ -105,6 +121,52 @@ def _detect_format(text: str, format_hint: str = "auto") -> ContentFormat:
     return fmt
 
 
+def _truncate_preview(text: str, max_chars: int) -> str:
+    if max_chars <= 0:
+        return ""
+    if len(text) <= max_chars:
+        return text
+    suffix = "... [truncated]"
+    keep = max(max_chars - len(suffix), 0)
+    return text[:keep] + suffix
+
+
+def _model_response_text(response: object) -> str:
+    content = getattr(response, "content", response)
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            if isinstance(item, str):
+                parts.append(item)
+                continue
+            if not isinstance(item, dict):
+                continue
+            text = item.get("text")
+            if isinstance(text, str):
+                parts.append(text)
+        if parts:
+            return "\n".join(parts)
+    return str(content)
+
+
+def _extract_python_code(text: str) -> str:
+    stripped = text.strip()
+    match = _FINAL_VAR_CALL_PATTERN.match(stripped)
+    if match:
+        return f"set_final({match.group('value')})"
+    match = _FINAL_CALL_PATTERN.match(stripped)
+    if match:
+        return f"set_final({match.group('value')})"
+
+    code_blocks = [m.group("code").strip() for m in _CODE_BLOCK_PATTERN.finditer(text)]
+    for code in reversed(code_blocks):
+        if code:
+            return code
+    return stripped
+
+
 # ---------------------------------------------------------------------------
 # RLMSessionManager
 # ---------------------------------------------------------------------------
@@ -124,17 +186,27 @@ class RLMSessionManager:
         context_policy: str = "trusted",
         sub_query_model: BaseChatModel | None = None,
         sub_query_timeout: float = 120.0,
+        rlm_max_recursion_depth: int = 1,
         sub_query_max_tokens: int = 4096,
         context_token_threshold: int = 20_000,
         context_iteration_threshold: int = 100,
+        hist_max_entries: int = 64,
+        hist_max_code_chars: int = 280,
+        hist_max_text_chars: int = 200,
+        enable_final_sentinel: bool = False,
     ) -> None:
         self.sandbox_config = sandbox_config or SandboxConfig()
         self.context_policy = context_policy
         self._sub_query_model = sub_query_model
         self._sub_query_timeout = sub_query_timeout
+        self._rlm_max_recursion_depth = max(0, int(rlm_max_recursion_depth))
         self._sub_query_max_tokens = sub_query_max_tokens
         self._context_token_threshold = context_token_threshold
         self._context_iteration_threshold = context_iteration_threshold
+        self._hist_max_entries = max(1, hist_max_entries)
+        self._hist_max_code_chars = max(40, hist_max_code_chars)
+        self._hist_max_text_chars = max(40, hist_max_text_chars)
+        self.enable_final_sentinel = enable_final_sentinel
         self._loop = _running_loop_or_none()
         self.sessions: dict[str, Session] = {}
 
@@ -183,8 +255,12 @@ class RLMSessionManager:
             line_number_base=line_number_base,
             context_token_threshold=self._context_token_threshold,
             context_iteration_threshold=self._context_iteration_threshold,
+            max_hist_entries=self._hist_max_entries,
+            max_hist_code_chars=self._hist_max_code_chars,
+            max_hist_text_chars=self._hist_max_text_chars,
         )
         self._inject_sub_query(session, context_id)
+        self._sync_session_runtime_vars(session)
         self.sessions[context_id] = session
         return meta
 
@@ -194,6 +270,12 @@ class RLMSessionManager:
         """Recompute context metadata from the live REPL context."""
         context_text = _coerce_context_to_text(session.repl.get_variable("ctx"))
         session.meta = _analyze_text_context(context_text, session.meta.format.value)
+
+    def _sync_session_runtime_vars(self, session: Session) -> None:
+        """Mirror manager-maintained artifacts into the REPL namespace."""
+        session.repl.set_variable("hist", [dict(item) for item in session.hist])
+        if session.repl.get_variable("Final") is None:
+            session.repl.set_variable("Final", None)
 
     # -- Context-pressure policy --------------------------------------------
 
@@ -347,6 +429,97 @@ class RLMSessionManager:
             session.think_history.append(f"Auto-pressure event triggered: {source_op}")
         return self._compact_session(context_id, session)
 
+    def append_hist_entry(
+        self,
+        context_id: str,
+        entry: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        """Append a bounded root-loop history entry for a context."""
+        session = self.get_session(context_id)
+        if session is None:
+            return None
+        normalized = session.append_hist(entry)
+        self._sync_session_runtime_vars(session)
+        return normalized
+
+    def get_recent_hist_entries(
+        self,
+        *,
+        limit: int = 4,
+    ) -> list[dict[str, Any]]:
+        """Return recent history entries across sessions (newest first)."""
+        if limit <= 0:
+            return []
+        entries: list[dict[str, Any]] = []
+        for context_id, session in self.sessions.items():
+            for item in session.hist:
+                enriched = dict(item)
+                enriched.setdefault("context_id", context_id)
+                entries.append(enriched)
+
+        def _sort_key(item: dict[str, Any]) -> tuple[str, int]:
+            timestamp = item.get("timestamp")
+            ts = timestamp if isinstance(timestamp, str) else ""
+            iteration = item.get("iteration")
+            it = int(iteration) if isinstance(iteration, int) else 0
+            return (ts, it)
+
+        entries.sort(key=_sort_key, reverse=True)
+        return entries[:limit]
+
+    def format_recent_exec_metadata(
+        self,
+        *,
+        limit: int = 4,
+        max_chars: int = 1200,
+    ) -> str:
+        """Build a bounded root-loop execution metadata summary for model context."""
+        entries = self.get_recent_hist_entries(limit=limit)
+        if not entries:
+            return ""
+
+        lines = ["[RLM per-iteration execution metadata]"]
+        for item in entries:
+            context_id = str(item.get("context_id", "default"))
+            iteration = item.get("iteration", "?")
+            status = "error" if item.get("error") else "ok"
+            stdout_chars = int(item.get("stdout_chars") or 0)
+            stderr_chars = int(item.get("stderr_chars") or 0)
+            duration = item.get("execution_time_ms")
+            duration_label = (
+                f"{float(duration):.1f}ms"
+                if isinstance(duration, (int, float))
+                else "n/a"
+            )
+            vars_updated = int(item.get("variables_updated_count") or 0)
+            final_set = bool(item.get("final_set"))
+            code_preview = str(item.get("code_preview") or "")
+            line = (
+                f"- {context_id}#{iteration} exec_python {status}; "
+                f"stdout={stdout_chars}, stderr={stderr_chars}, vars={vars_updated}, "
+                f"t={duration_label}, final={'set' if final_set else 'unset'}; "
+                f"code={code_preview!r}"
+            )
+            lines.append(line)
+
+        text = "\n".join(lines)
+        if max_chars <= 0 or len(text) <= max_chars:
+            return text
+        suffix = "\n... [metadata truncated]"
+        keep = max(max_chars - len(suffix), 0)
+        return text[:keep] + suffix
+
+    def consume_final_sentinel(self, context_id: str) -> str | None:
+        """Return and clear REPL `Final` sentinel value for a context."""
+        session = self.get_session(context_id)
+        if session is None:
+            return None
+        final_value = session.repl.get_variable("Final")
+        if final_value is None:
+            return None
+        session.repl.set_variable("Final", None)
+        return _coerce_context_to_text(final_value)
+
     def get_context_pressure_status(self, context_id: str) -> dict[str, object]:
         """Return compacted-state metadata for context status reporting."""
         session = self.get_session(context_id)
@@ -383,6 +556,7 @@ class RLMSessionManager:
                 "size_tokens_estimate": session.meta.size_tokens_estimate,
                 "iterations": session.iterations,
                 "evidence_count": len(session.evidence),
+                "hist_count": len(session.hist),
                 "task_count": len(session.tasks),
                 "compaction_count": session.compaction_count,
                 "context_pressure": {
@@ -450,7 +624,12 @@ class RLMSessionManager:
         session = _session_from_payload(payload, resolved_id, self.sandbox_config)
         session.context_token_threshold = self._context_token_threshold
         session.context_iteration_threshold = self._context_iteration_threshold
+        session.max_hist_entries = self._hist_max_entries
+        session.max_hist_code_chars = self._hist_max_code_chars
+        session.max_hist_text_chars = self._hist_max_text_chars
+        session._prune_hist()
         self._inject_sub_query(session, resolved_id)
+        self._sync_session_runtime_vars(session)
         self.sessions[resolved_id] = session
         return session.meta
 
@@ -463,7 +642,12 @@ class RLMSessionManager:
         resolved_id, session = load_session_from_file(path, self.sandbox_config, context_id)
         session.context_token_threshold = self._context_token_threshold
         session.context_iteration_threshold = self._context_iteration_threshold
+        session.max_hist_entries = self._hist_max_entries
+        session.max_hist_code_chars = self._hist_max_code_chars
+        session.max_hist_text_chars = self._hist_max_text_chars
+        session._prune_hist()
         self._inject_sub_query(session, resolved_id)
+        self._sync_session_runtime_vars(session)
         self.sessions[resolved_id] = session
         return session.meta
 
@@ -488,31 +672,155 @@ class RLMSessionManager:
             self._loop = _running_loop_or_none()
         session.repl.set_loop(self._loop)
 
-        model = self._sub_query_model
-        timeout = self._sub_query_timeout
-
-        async def _sub_query_async(prompt: str, context_slice: str | None = None) -> str:
+        async def _flat_sub_query_async(full_prompt: str) -> str:
+            model = self._sub_query_model
             if model is None:
                 return (
                     "[sub_query unavailable: no model configured. "
                     "Pass sub_query_model to RLMSessionManager or "
                     "create_rlm_agent to enable sub-LLM calls.]"
                 )
-            full_prompt = prompt
-            if context_slice:
-                full_prompt = f"{prompt}\n\n--- Context ---\n{context_slice}"
             try:
                 response = await asyncio.wait_for(
                     model.ainvoke(full_prompt),
-                    timeout=timeout,
+                    timeout=self._sub_query_timeout,
                 )
-                return str(response.content)
+                return _model_response_text(response)
             except asyncio.TimeoutError:
-                return f"[sub_query timed out after {timeout}s]"
+                return f"[sub_query timed out after {self._sub_query_timeout}s]"
             except Exception as exc:
                 logger.warning("sub_query error: %s", exc)
                 category = _classify_sub_query_error(exc)
                 return f"[sub_query error:{category}: {exc}]"
+
+        async def _run_sub_rlm_loop(
+            full_prompt: str,
+            *,
+            depth: int,
+            current_context_id: str,
+        ) -> str:
+            model = self._sub_query_model
+            if model is None:
+                return (
+                    "[sub_query unavailable: no model configured. "
+                    "Pass sub_query_model to RLMSessionManager or "
+                    "create_rlm_agent to enable sub-LLM calls.]"
+                )
+
+            if depth >= self._rlm_max_recursion_depth:
+                return await _flat_sub_query_async(full_prompt)
+
+            loop = self._loop or _running_loop_or_none()
+            child_repl = REPLEnvironment(
+                context=full_prompt,
+                context_var_name="ctx",
+                config=self.sandbox_config,
+                loop=loop,
+            )
+            child_repl.set_variable("line_number_base", 1)
+            child_repl.set_variable("Final", None)
+
+            async def _nested_sub_query_async(
+                nested_prompt: str,
+                nested_context_slice: str | None = None,
+            ) -> str:
+                nested_full_prompt = nested_prompt
+                if nested_context_slice:
+                    nested_full_prompt = f"{nested_prompt}\n\n--- Context ---\n{nested_context_slice}"
+                return await _run_sub_rlm_loop(
+                    nested_full_prompt,
+                    depth=depth + 1,
+                    current_context_id=current_context_id,
+                )
+
+            child_repl.inject_sub_query(_nested_sub_query_async)
+
+            meta = _analyze_text_context(full_prompt, "text")
+            context_preview = _truncate_preview(full_prompt, self._hist_max_text_chars)
+            hist: list[str] = [
+                (
+                    f"[sub-context] depth={depth} context_id={current_context_id} "
+                    f"chars={meta.size_chars:,} lines={meta.size_lines:,} "
+                    f"tokens~={meta.size_tokens_estimate:,} "
+                    f"prefix={context_preview!r}"
+                )
+            ]
+            last_observation = ""
+            max_iterations = max(
+                1,
+                min(self._context_iteration_threshold, _SUB_QUERY_MAX_ITERATIONS),
+            )
+
+            for iteration in range(1, max_iterations + 1):
+                history_text = "\n\n".join(hist[-(self._hist_max_entries * 2) :])
+                model_prompt = (
+                    f"{_SUB_QUERY_RECURSIVE_SYSTEM_PROMPT}\n\n"
+                    f"Depth: {depth} (max recursion depth: {self._rlm_max_recursion_depth})\n"
+                    f"Iteration: {iteration}/{max_iterations}\n"
+                    f"History:\n{history_text}\n\n"
+                    "Return only executable Python code for the next REPL step."
+                )
+                try:
+                    response = await asyncio.wait_for(
+                        model.ainvoke(model_prompt),
+                        timeout=self._sub_query_timeout,
+                    )
+                except asyncio.TimeoutError:
+                    return f"[sub_query timed out after {self._sub_query_timeout}s]"
+                except Exception as exc:
+                    logger.warning("sub_query error: %s", exc)
+                    category = _classify_sub_query_error(exc)
+                    return f"[sub_query error:{category}: {exc}]"
+
+                response_text = _model_response_text(response)
+                code = _extract_python_code(response_text)
+                if not code:
+                    return "[sub_query error:empty_code]"
+
+                result = await child_repl.execute_async(code)
+                stdout_preview = _truncate_preview(result.stdout, self._hist_max_text_chars)
+                stderr_preview = _truncate_preview(result.stderr, self._hist_max_text_chars)
+                error_preview = _truncate_preview(result.error or "", self._hist_max_text_chars)
+                code_preview = _truncate_preview(code, self._hist_max_code_chars)
+
+                hist.append(f"[code #{iteration}]\n{code_preview}")
+                hist.append(
+                    (
+                        f"[exec #{iteration}] updated={result.variables_updated} "
+                        f"stdout_len={len(result.stdout)} stderr_len={len(result.stderr)} "
+                        f"error={'yes' if result.error else 'no'}\n"
+                        f"stdout={stdout_preview!r}\n"
+                        f"stderr={stderr_preview!r}\n"
+                        f"exec_error={error_preview!r}"
+                    )
+                )
+
+                final_value = child_repl.get_variable("Final")
+                if final_value is not None:
+                    return _coerce_context_to_text(final_value)
+
+                if result.stdout:
+                    last_observation = result.stdout
+                elif result.error:
+                    last_observation = f"[sub_query exec error: {result.error}]"
+                elif result.stderr:
+                    last_observation = result.stderr
+                elif result.return_value is not None:
+                    last_observation = _coerce_context_to_text(result.return_value)
+
+            if last_observation:
+                return _truncate_preview(last_observation, self.sandbox_config.max_output_chars)
+            return "[sub_query reached max iterations without Final]"
+
+        async def _sub_query_async(prompt: str, context_slice: str | None = None) -> str:
+            full_prompt = prompt
+            if context_slice:
+                full_prompt = f"{prompt}\n\n--- Context ---\n{context_slice}"
+            return await _run_sub_rlm_loop(
+                full_prompt,
+                depth=0,
+                current_context_id=context_id,
+            )
 
         session.repl.inject_sub_query(_sub_query_async)
 
@@ -524,6 +832,7 @@ class RLMSessionManager:
         sandbox_timeout: float | None = None,
         context_policy: str | None = None,
         sub_query_timeout: float | None = None,
+        rlm_max_recursion_depth: int | None = None,
     ) -> dict[str, Any]:
         """Update runtime configuration. Returns the new config."""
         if sandbox_timeout is not None:
@@ -538,9 +847,12 @@ class RLMSessionManager:
             self.context_policy = context_policy
         if sub_query_timeout is not None:
             self._sub_query_timeout = sub_query_timeout
+        if rlm_max_recursion_depth is not None:
+            self._rlm_max_recursion_depth = max(0, int(rlm_max_recursion_depth))
         return {
             "sandbox_timeout": self.sandbox_config.timeout_seconds,
             "context_policy": self.context_policy,
             "sub_query_timeout": self._sub_query_timeout,
+            "rlm_max_recursion_depth": self._rlm_max_recursion_depth,
             "max_output_chars": self.sandbox_config.max_output_chars,
         }

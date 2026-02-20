@@ -311,6 +311,13 @@ def _build_rlm_middleware(
     *,
     sandbox_timeout: float,
     context_policy: str,
+    rlm_hist_max_entries: int,
+    rlm_hist_max_code_chars: int,
+    rlm_hist_max_text_chars: int,
+    rlm_enable_final_sentinel: bool,
+    rlm_auto_inject_exec_metadata: bool,
+    rlm_exec_metadata_max_entries: int,
+    rlm_exec_metadata_max_chars: int,
     auto_load_threshold: int,
     auto_load_preview_chars: int,
     rlm_tool_profile: RLMToolProfile,
@@ -319,11 +326,19 @@ def _build_rlm_middleware(
     rlm_system_prompt: str | None,
     sub_query_model: BaseChatModel | None,
     sub_query_timeout: float,
+    rlm_max_recursion_depth: int,
 ) -> RLMMiddleware:
     """Build a consistently configured RLM middleware instance."""
     return RLMMiddleware(
         sandbox_timeout=sandbox_timeout,
         context_policy=context_policy,
+        hist_max_entries=rlm_hist_max_entries,
+        hist_max_code_chars=rlm_hist_max_code_chars,
+        hist_max_text_chars=rlm_hist_max_text_chars,
+        enable_final_sentinel=rlm_enable_final_sentinel,
+        inject_exec_metadata=rlm_auto_inject_exec_metadata,
+        inject_exec_metadata_max_entries=rlm_exec_metadata_max_entries,
+        inject_exec_metadata_max_chars=rlm_exec_metadata_max_chars,
         auto_load_threshold=auto_load_threshold,
         auto_load_preview_chars=auto_load_preview_chars,
         tool_profile=rlm_tool_profile,
@@ -332,6 +347,7 @@ def _build_rlm_middleware(
         system_prompt=rlm_system_prompt,
         sub_query_model=sub_query_model,
         sub_query_timeout=sub_query_timeout,
+        rlm_max_recursion_depth=rlm_max_recursion_depth,
     )
 
 
@@ -375,6 +391,13 @@ def create_rlm_agent(
     # RLM-specific parameters
     sandbox_timeout: float = 180.0,
     context_policy: str = "trusted",
+    rlm_hist_max_entries: int = 64,
+    rlm_hist_max_code_chars: int = 280,
+    rlm_hist_max_text_chars: int = 200,
+    rlm_enable_final_sentinel: bool = False,
+    rlm_auto_inject_exec_metadata: bool = True,
+    rlm_exec_metadata_max_entries: int = 4,
+    rlm_exec_metadata_max_chars: int = 1200,
     auto_load_threshold: int = 10_000,
     auto_load_preview_chars: int = 600,
     rlm_tool_profile: RLMToolProfile = DEFAULT_RLM_TOOL_PROFILE,
@@ -382,6 +405,7 @@ def create_rlm_agent(
     rlm_exclude_tools: Sequence[str] = (),
     sub_query_model: BaseChatModel | None = None,
     sub_query_timeout: float = 120.0,
+    rlm_max_recursion_depth: int = 1,
     rlm_system_prompt: str | None = None,
     enable_rlm_in_subagents: bool = True,
 ) -> CompiledStateGraph:
@@ -409,14 +433,24 @@ def create_rlm_agent(
         cache: Cache for the agent.
         sandbox_timeout: RLM REPL timeout.
         context_policy: RLM context policy.
+        rlm_hist_max_entries: Max bounded `hist` entries stored per context.
+        rlm_hist_max_code_chars: Max chars retained per history `code_preview`.
+        rlm_hist_max_text_chars: Max chars retained for history text previews.
+        rlm_enable_final_sentinel: Enable REPL `Final` sentinel completion path.
+        rlm_auto_inject_exec_metadata: Auto-inject bounded per-iteration metadata.
+        rlm_exec_metadata_max_entries: Max history entries injected per model call.
+        rlm_exec_metadata_max_chars: Max chars for injected execution metadata block.
         auto_load_threshold: Auto-load threshold for large results.
         auto_load_preview_chars: Preview characters shown after auto-load (0 disables previews).
-        rlm_tool_profile: RLM tool profile (`full`, `reasoning`, or `core`).
+        rlm_tool_profile: RLM tool profile (`full`, `reasoning`, `core`, or `strict`).
         rlm_include_tools: Additional RLM tools to include on top of the profile.
         rlm_exclude_tools: RLM tools to remove from the selected profile.
         sub_query_model: Optional model used by RLM `sub_query()`/`llm_query()`.
             If omitted, the primary `model` is reused for sub-queries.
         sub_query_timeout: Timeout in seconds for recursive sub-query calls.
+        rlm_max_recursion_depth: Maximum recursion depth for `sub_query()`.
+            At or beyond this depth, calls fall back to direct model invocation.
+            Defaults to `1`, matching paper experiments.
         rlm_system_prompt: Custom RLM workflow prompt.
         enable_rlm_in_subagents: Deprecated compatibility flag.
 
@@ -462,6 +496,13 @@ def create_rlm_agent(
     rlm_mw = _build_rlm_middleware(
         sandbox_timeout=sandbox_timeout,
         context_policy=context_policy,
+        rlm_hist_max_entries=rlm_hist_max_entries,
+        rlm_hist_max_code_chars=rlm_hist_max_code_chars,
+        rlm_hist_max_text_chars=rlm_hist_max_text_chars,
+        rlm_enable_final_sentinel=rlm_enable_final_sentinel,
+        rlm_auto_inject_exec_metadata=rlm_auto_inject_exec_metadata,
+        rlm_exec_metadata_max_entries=rlm_exec_metadata_max_entries,
+        rlm_exec_metadata_max_chars=rlm_exec_metadata_max_chars,
         auto_load_threshold=auto_load_threshold,
         auto_load_preview_chars=auto_load_preview_chars,
         rlm_tool_profile=rlm_tool_profile,
@@ -470,6 +511,7 @@ def create_rlm_agent(
         rlm_system_prompt=rlm_system_prompt,
         sub_query_model=effective_sub_query_model,
         sub_query_timeout=sub_query_timeout,
+        rlm_max_recursion_depth=rlm_max_recursion_depth,
     )
 
     # Build main agent middleware stack
@@ -515,6 +557,13 @@ def create_rlm_agent(
                 _build_rlm_middleware(
                     sandbox_timeout=sandbox_timeout,
                     context_policy=context_policy,
+                    rlm_hist_max_entries=rlm_hist_max_entries,
+                    rlm_hist_max_code_chars=rlm_hist_max_code_chars,
+                    rlm_hist_max_text_chars=rlm_hist_max_text_chars,
+                    rlm_enable_final_sentinel=rlm_enable_final_sentinel,
+                    rlm_auto_inject_exec_metadata=rlm_auto_inject_exec_metadata,
+                    rlm_exec_metadata_max_entries=rlm_exec_metadata_max_entries,
+                    rlm_exec_metadata_max_chars=rlm_exec_metadata_max_chars,
                     auto_load_threshold=auto_load_threshold,
                     auto_load_preview_chars=auto_load_preview_chars,
                     rlm_tool_profile=rlm_tool_profile,
@@ -523,6 +572,7 @@ def create_rlm_agent(
                     rlm_system_prompt=rlm_system_prompt,
                     sub_query_model=effective_sub_query_model,
                     sub_query_timeout=sub_query_timeout,
+                    rlm_max_recursion_depth=rlm_max_recursion_depth,
                 )
             )
 
@@ -570,6 +620,13 @@ def create_rlm_agent(
         _build_rlm_middleware(
             sandbox_timeout=sandbox_timeout,
             context_policy=context_policy,
+            rlm_hist_max_entries=rlm_hist_max_entries,
+            rlm_hist_max_code_chars=rlm_hist_max_code_chars,
+            rlm_hist_max_text_chars=rlm_hist_max_text_chars,
+            rlm_enable_final_sentinel=rlm_enable_final_sentinel,
+            rlm_auto_inject_exec_metadata=rlm_auto_inject_exec_metadata,
+            rlm_exec_metadata_max_entries=rlm_exec_metadata_max_entries,
+            rlm_exec_metadata_max_chars=rlm_exec_metadata_max_chars,
             auto_load_threshold=auto_load_threshold,
             auto_load_preview_chars=auto_load_preview_chars,
             rlm_tool_profile=rlm_tool_profile,
@@ -578,6 +635,7 @@ def create_rlm_agent(
             rlm_system_prompt=rlm_system_prompt,
             sub_query_model=effective_sub_query_model,
             sub_query_timeout=sub_query_timeout,
+            rlm_max_recursion_depth=rlm_max_recursion_depth,
         )
     )
     gp_middleware.extend([

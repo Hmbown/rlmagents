@@ -43,7 +43,8 @@ result = agent.invoke({
 | Context externalization | RLM core | `load_context`, `load_file_context`, `list_contexts` |
 | REPL analysis loop | RLM core | `exec_python`, `get_variable` |
 | Recursive decomposition | RLM core | `sub_query()` / `llm_query()` inside REPL execution |
-| Completion handoff | RLM-aligned implementation | `finalize` (analogous to paper `Final`) |
+| Root-loop history | RLM core | bounded `hist` artifact with per-iteration execution metadata |
+| Completion handoff | RLM-aligned implementation | `finalize`, plus optional REPL `Final`/`set_final(...)` sentinel path |
 | Query and search extensions | RLMAgents extension | `peek_context`, `search_context`, `semantic_search`, `chunk_context`, `cross_context_search`, `rg_search` |
 | Planning | RLMAgents extension | `write_todos`, `read_todos` |
 | Filesystem | RLMAgents extension | `read_file`, `write_file`, `edit_file`, `ls`, `glob`, `grep` |
@@ -64,6 +65,8 @@ The RLM-aligned core follows Algorithm 1:
 1. Prompt/data are treated as external REPL state instead of root-context stuffing.
 2. The model iterates through a code-execute-observe loop.
 3. Recursion is programmatic via `sub_query()` / `llm_query()` inside REPL code.
+4. Execution metadata is retained in bounded `hist` and compact metadata is auto-injected into root model context.
+5. Completion supports explicit `finalize` and optional `Final` sentinel mode.
 
 RLMAgents then layers additional functionality not required by the paper:
 evidence lifecycle, broader search/retrieval tools, session persistence
@@ -77,7 +80,7 @@ evidence lifecycle, broader search/retrieval tools, session persistence
 3. **Analyze** with `exec_python` (100+ built-in REPL helpers)
 4. **Track** evidence (provenance captured automatically)
 5. **Reason** with `think`, `evaluate_progress`
-6. **Conclude** with `finalize` (cited answers)
+6. **Conclude** with `finalize` (or `set_final(...)` / `Final` when sentinel mode is enabled)
 
 ## Configuration
 
@@ -88,6 +91,11 @@ agent = create_rlm_agent(
     model="deepseek/deepseek-chat",       # Main agent model (required)
     sub_query_model="minimax/minimax-01",  # Optional; defaults to reusing `model`
     sub_query_timeout=120.0,
+    rlm_auto_inject_exec_metadata=True,    # Default: inject bounded per-iteration metadata
+    rlm_exec_metadata_max_entries=4,
+    rlm_exec_metadata_max_chars=1200,
+    rlm_hist_max_entries=64,               # Bounded root-loop history artifact
+    rlm_enable_final_sentinel=False,       # Optional paper-style `Final` completion path
     skills=["/skills/analysis/"],
     memory=["/memory/AGENTS.md"],
     rlm_tool_profile="reasoning",          # full | reasoning | core

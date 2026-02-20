@@ -284,9 +284,7 @@ class TestSandboxSetupForwarding:
 
             # Make the checkpointer async context manager return a mock
             mock_cp = MagicMock()
-            mock_checkpointer.return_value.__aenter__ = AsyncMock(
-                return_value=mock_cp
-            )
+            mock_checkpointer.return_value.__aenter__ = AsyncMock(return_value=mock_cp)
             mock_checkpointer.return_value.__aexit__ = AsyncMock(return_value=None)
 
             # Make create_cli_agent return a mock agent that immediately finishes
@@ -342,9 +340,7 @@ class TestRlmConfigForwarding:
             mock_settings.model_name = None
 
             mock_cp = MagicMock()
-            mock_checkpointer.return_value.__aenter__ = AsyncMock(
-                return_value=mock_cp
-            )
+            mock_checkpointer.return_value.__aenter__ = AsyncMock(return_value=mock_cp)
             mock_checkpointer.return_value.__aexit__ = AsyncMock(return_value=None)
 
             mock_agent = MagicMock()

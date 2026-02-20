@@ -50,17 +50,25 @@ agent = create_rlm_agent(
 )
 ```
 
-## Paper Alignment (What We Claim)
+## What Is an RLM?
 
-This project is paper-aligned at the loop level, but it is not the official
-paper codebase.
+An RLM (Recursive Language Model) is a way to work on big tasks without
+stuffing everything into one huge prompt.
 
-The core behavior we share with the paper:
+In this project, that means:
 
-- Prompt/data can live outside the root model context (in REPL/session state)
-- The model iterates by writing and executing code (`exec_python`)
-- Recursive sub-calls are programmatic via `sub_query` (`llm_query` alias)
-- Completion supports explicit `finalize` and optional `Final` / `set_final(...)`
+- Data can live in REPL/session state instead of only in chat context
+- The agent works in a loop by writing and running code (`exec_python`)
+- It can call recursive sub-queries with `sub_query` (`llm_query` alias)
+- It finishes with `finalize` (or optionally `Final` / `set_final(...)`)
+
+## What It's Helpful For
+
+- Large codebase analysis where you need to inspect many files
+- Long documents that are too big for a single prompt
+- Multi-step tasks that mix search, code execution, and synthesis
+- Workflows that need citations/evidence tracking for final answers
+- Repeatable analysis pipelines via recipe tools
 
 ## What RLMAgents Adds
 
@@ -68,7 +76,7 @@ The core behavior we share with the paper:
 - Multi-context isolation (separate REPL sessions with `context_id`)
 - Recipe tools (`validate_recipe`, `run_recipe`)
 - Agent harness tools: planning, filesystem, shell, sub-agents, skills, memory
-- `@file` auto-loading and auto-loading large tool results into contexts
+- `@file` loading plus auto-loading large tool results into contexts
 
 ## Monorepo Layout
 

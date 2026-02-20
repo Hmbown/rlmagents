@@ -5,9 +5,10 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 
-Agent harness built on LangChain + LangGraph. Based on
+`rlmagents` is an agent harness built on LangChain + LangGraph.
+It uses an RLM-style loop inspired by
 [Recursive Language Models](https://arxiv.org/abs/2512.24601)
-(Zhang, Kraska, Khattab 2025) with additional agent tooling.
+(Zhang, Kraska, Khattab, 2025), then adds practical agent tooling.
 
 Forked from [LangChain Deep Agents](https://github.com/langchain-ai/deepagents).
 Paper reference implementation: [alexzhang13/rlm](https://github.com/alexzhang13/rlm).
@@ -49,81 +50,43 @@ agent = create_rlm_agent(
 )
 ```
 
-## What's in it
+## Paper Alignment (What We Claim)
 
-### RLM core
+This project is paper-aligned at the loop level, but it is not the official
+paper codebase.
 
-The paper's key insight is that long prompts should not be fed directly into
-the model. Instead, the prompt is treated as part of an external environment
-that the model interacts with symbolically and recursively.
+The core behavior we share with the paper:
 
-In practice this means three things (corresponding to the three design choices
-that distinguish Algorithm 1 from Algorithm 2 in the paper):
+- Prompt/data can live outside the root model context (in REPL/session state)
+- The model iterates by writing and executing code (`exec_python`)
+- Recursive sub-calls are programmatic via `sub_query` (`llm_query` alias)
+- Completion supports explicit `finalize` and optional `Final` / `set_final(...)`
 
-1. **Prompt is external.** The prompt is loaded as a variable in a Python REPL
-   environment. The model receives only constant-size metadata (length, short
-   prefix). This is what the paper calls giving the model a "symbolic handle"
-   to the prompt.
-
-2. **Recursion is programmatic.** The model can invoke a sub-LLM from inside
-   REPL code (the paper uses `llm_query`; we expose this as `sub_query()` with
-   `llm_query()` as an alias). This lets the model write loops that call the
-   sub-LLM on slices of the prompt, rather than being limited to verbalized
-   one-off delegations.
-
-3. **Intermediate results live in REPL state.** Variables and sub-call outputs
-   are stored in the REPL, not in the model's context window. Only compact
-   metadata of each execution step is appended to the root history (`hist`),
-   which is compacted when it exceeds the model's context budget.
-
-Iteration stops when the model sets `Final` in the REPL (we also support
-`set_final(...)` and an explicit `finalize` tool call).
-
-The paper's experiments used max recursion depth 1 for sub-calls (sub-calls
-are flat LM invocations, not full RLM loops). Our default matches this.
-
-### Additions (not in the paper)
+## What RLMAgents Adds
 
 - Evidence tracking and citations across tool calls
-- Multi-context isolation (work with multiple data sources in separate REPL sessions)
-- `sub_query_map` (parallel fan-out over multiple prompts), `sub_query_strict` (output validation)
-- Recipe DSL for declarative multi-step pipelines (`validate_recipe`, `run_recipe`)
-- Agent harness: planning, filesystem, shell, sub-agents, skills, memory
+- Multi-context isolation (separate REPL sessions with `context_id`)
+- Recipe tools (`validate_recipe`, `run_recipe`)
+- Agent harness tools: planning, filesystem, shell, sub-agents, skills, memory
 - `@file` auto-loading and auto-loading large tool results into contexts
 
-### `sub_query` usage
-
-Inside `exec_python`, use `sub_query` when you need LLM judgment on data
-(not just regex or Python):
-
-```python
-# Fan out over chunks
-chunks = chunk(2000, 200)
-summaries = sub_query_map([f"Summarize:\n{c}" for c in chunks])
-
-# Classification
-verdict = sub_query("Is this code safe?", code_block)
-
-# Multi-hop
-entities = sub_query("Extract named entities", ctx)
-rels = sub_query(f"Relationships between: {entities}", ctx)
-```
-
-For tasks needing filesystem access or true parallelism, use sub-agents
-(`task` tool) instead.
-
-## Monorepo layout
+## Monorepo Layout
 
 | Path | Package | Description |
 |------|---------|-------------|
 | `libs/rlmagents` | `rlmagents` | Python API + bundled CLI/TUI |
-| `libs/cli` | `rlmagents-cli` | Standalone CLI (monorepo dev) |
-| `libs/acp` | `deepagents-acp` | Agent Context Protocol (Zed) |
-| `libs/harbor` | `deepagents-harbor` | Evaluation (Terminal Bench) |
+| `libs/cli` | `rlmagents-cli` | Standalone CLI package (monorepo development) |
+| `libs/acp` | `deepagents-acp` | Agent Context Protocol integration |
+| `libs/harbor` | `deepagents-harbor` | Evaluation and benchmark tooling |
+| `libs/deepagents` | `deepagents` | Upstream-compatible SDK package |
 
 ## Development
 
 ```bash
+# check all lockfiles in the monorepo
+make lock-check
+
+# package-level checks
 cd libs/rlmagents
 uv sync --group test
 uv run pytest tests -q

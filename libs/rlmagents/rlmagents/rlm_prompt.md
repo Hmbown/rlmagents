@@ -42,11 +42,42 @@ When executing Python in a context, these helpers are pre-loaded:
 
 The full context is available as `ctx` variable.
 
+## When to Use `sub_query` vs Other Tools
+
+`sub_query` is the recursive decomposition primitive inside `exec_python`. Use it when Python alone isn't enough and you need LLM judgment on a piece of data.
+
+**Use `sub_query` when:**
+- **Chunk-level LLM reasoning**: You have a large context chunked into pieces, and each chunk needs qualitative LLM analysis (not just regex or extraction).
+  ```python
+  chunks = chunk(2000, 200)
+  summaries = sub_query_map([f"Summarize key claims in:\n{c}" for c in chunks])
+  ```
+- **Classification or judgment**: You need the LLM to make a qualitative decision that can't be expressed as pattern matching or Python logic.
+  ```python
+  verdict = sub_query("Is this code safe? List vulnerabilities.", code_block)
+  ```
+- **Multi-hop reasoning**: The answer requires chaining LLM calls where each depends on the previous result.
+  ```python
+  entities = sub_query("Extract all named entities", ctx)
+  relationships = sub_query(f"What relationships exist between: {entities}", ctx)
+  ```
+- **Parallel fan-out**: Use `sub_query_map` for N independent questions or N chunks that each need LLM analysis.
+
+**Do NOT use `sub_query` for:**
+- Simple extraction -- use `search()`, `extract_pattern()`, `find_all()` instead
+- Counting, statistics, or aggregation -- use Python directly
+- Tasks where you already have enough context in the current REPL to answer with code
+
+**Choosing between `sub_query` and sub-agents (task tool):**
+- `sub_query`: Inline recursive decomposition inside a single REPL. Best for programmatic loops over data chunks. Stays within the current analysis context.
+- Sub-agents (task tool): Parallel isolated execution with full tool access. Best for independent tasks that need filesystem access, their own context loading, or true parallelism across different data sources.
+
 ## Recursive `sub_query` Notes
 
 - `sub_query` is not a flat one-shot completion in this harness; it runs a mini code-execute-observe loop inside a fresh REPL.
 - Sub-calls can inspect `ctx`, create variables, run loops, and set `Final` to return results.
 - Recursive sub-calls are supported. A configurable max recursion depth limits nesting; once the max depth is reached, sub-calls fall back to a direct model invocation.
+- When using reasoning models (e.g. `deepseek-reasoner`) as the sub-query backend, expect longer response times. Configure `sub_query_timeout` accordingly (300s+ recommended for reasoning models).
 
 ## Multi-Context Support
 

@@ -3967,7 +3967,7 @@ wheels = [
 
 [[package]]
 name = "rlmagents"
-version = "0.0.4"
+version = "0.0.5"
 source = { editable = "../rlmagents" }
 dependencies = [
     { name = "aiosqlite" },

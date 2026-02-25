@@ -8,11 +8,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
+from deepagents_cli.config import settings
 from rlmagents._harness.backends.utils import (
     perform_string_replacement,  # noqa: PLC2701
 )
-
-from deepagents_cli.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -145,7 +144,7 @@ def resolve_physical_path(
             agent_dir = settings.get_agent_dir(assistant_id)
             suffix = path_str.removeprefix("/memories/").lstrip("/")
             return (agent_dir / suffix).resolve()
-        path = Path(path_str)
+        path = Path(path_str).expanduser()
         if path.is_absolute():
             return path
         return (Path.cwd() / path).resolve()

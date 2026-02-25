@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.0.5](https://github.com/Hmbown/rlmagents/compare/rlmagents==0.0.4...rlmagents==0.0.5) (2026-02-25)
+
+### Bug Fixes
+
+* **cli:** expand `~` when resolving local file paths outside virtual mode
+* **cli:** map LangSmith sandbox file operation exceptions to stable error codes
+* **cli:** make session timestamp formatting portable across macOS/Linux/Windows
+
 ## [0.0.3](https://github.com/Hmbown/rlmagents/compare/rlmagents==0.0.2...rlmagents==0.0.3) (2026-02-19)
 
 ### Features

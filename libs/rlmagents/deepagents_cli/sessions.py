@@ -66,12 +66,10 @@ def format_timestamp(iso_timestamp: str | None) -> str:
         return ""
     try:
         dt = datetime.fromisoformat(iso_timestamp).astimezone()
-        return (
-            dt.strftime("%b %d, %-I:%M%p")
-            .lower()
-            .replace("am", "am")
-            .replace("pm", "pm")
-        )
+        # Windows strftime does not support %-I (unpadded hour), so build
+        # the unpadded hour from %I for cross-platform compatibility.
+        hour = dt.strftime("%I").lstrip("0") or "0"
+        return f"{dt.strftime('%b %d')}, {hour}:{dt.strftime('%M%p').lower()}"
     except (ValueError, TypeError):
         logger.debug(
             "Failed to parse timestamp %r; displaying as blank",

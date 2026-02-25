@@ -7,6 +7,7 @@ import os
 import time
 from typing import TYPE_CHECKING, Any
 
+from deepagents_cli.integrations.sandbox_provider import SandboxProvider
 from rlmagents._harness.backends.protocol import (
     ExecuteResponse,  # noqa: PLC2701
     FileDownloadResponse,  # noqa: PLC2701
@@ -14,8 +15,6 @@ from rlmagents._harness.backends.protocol import (
     SandboxBackendProtocol,
 )
 from rlmagents._harness.backends.sandbox import BaseSandbox  # noqa: PLC2701
-
-from deepagents_cli.integrations.sandbox_provider import SandboxProvider
 
 if TYPE_CHECKING:
     from langsmith.sandbox import Sandbox, SandboxClient, SandboxTemplate
@@ -69,6 +68,27 @@ class LangSmithBackend(BaseSandbox):
             truncated=False,
         )
 
+    @staticmethod
+    def _map_file_error(exc: Exception, *, is_download: bool) -> str:
+        """Map sandbox exceptions to standardized file operation error codes.
+
+        Args:
+            exc: Exception raised by sandbox read/write operations.
+            is_download: Whether the failed operation was a download.
+
+        Returns:
+            Standardized file operation error code.
+        """
+        if isinstance(exc, FileNotFoundError):
+            return "file_not_found" if is_download else "invalid_path"
+        if isinstance(exc, PermissionError):
+            return "permission_denied"
+        if is_download and isinstance(exc, IsADirectoryError):
+            return "is_directory"
+        if isinstance(exc, (OSError, ValueError)):
+            return "invalid_path"
+        return "file_not_found" if is_download else "invalid_path"
+
     def download_files(self, paths: list[str]) -> list[FileDownloadResponse]:
         """Download multiple files from the LangSmith sandbox.
 
@@ -83,17 +103,25 @@ class LangSmithBackend(BaseSandbox):
             List of FileDownloadResponse objects, one per input path.
             Response order matches input order.
 
-        TODO: Map LangSmith API error strings to standardized FileOperationError codes.
-        Currently only implements happy path.
         """
         responses: list[FileDownloadResponse] = []
 
         for path in paths:
-            # Use LangSmith's native file read API (returns bytes)
-            content = self._sandbox.read(path)
-            responses.append(
-                FileDownloadResponse(path=path, content=content, error=None)
-            )
+            try:
+                # Use LangSmith's native file read API (returns bytes)
+                content = self._sandbox.read(path)
+            except Exception as e:  # noqa: BLE001
+                responses.append(
+                    FileDownloadResponse(
+                        path=path,
+                        content=None,
+                        error=self._map_file_error(e, is_download=True),
+                    )
+                )
+            else:
+                responses.append(
+                    FileDownloadResponse(path=path, content=content, error=None)
+                )
 
         return responses
 
@@ -111,15 +139,22 @@ class LangSmithBackend(BaseSandbox):
             List of FileUploadResponse objects, one per input file.
             Response order matches input order.
 
-        TODO: Map LangSmith API error strings to standardized FileOperationError codes.
-        Currently only implements happy path.
         """
         responses: list[FileUploadResponse] = []
 
         for path, content in files:
-            # Use LangSmith's native file write API
-            self._sandbox.write(path, content)
-            responses.append(FileUploadResponse(path=path, error=None))
+            try:
+                # Use LangSmith's native file write API
+                self._sandbox.write(path, content)
+            except Exception as e:  # noqa: BLE001
+                responses.append(
+                    FileUploadResponse(
+                        path=path,
+                        error=self._map_file_error(e, is_download=False),
+                    )
+                )
+            else:
+                responses.append(FileUploadResponse(path=path, error=None))
 
         return responses
 

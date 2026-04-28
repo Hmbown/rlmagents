@@ -102,7 +102,7 @@ jobs:
         working-directory: ${{ env.WORKING_DIR }}
 
       - name: Upload build
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: dist
           path: ${{ env.WORKING_DIR }}/dist/
@@ -419,7 +419,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         with:
           name: dist
           path: ${{ env.WORKING_DIR }}/dist/
@@ -476,7 +476,7 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         with:
           name: dist
           path: ${{ env.WORKING_DIR }}/dist/
@@ -552,7 +552,7 @@ jobs:
 
       - name: Upload rlmagents benchmark score artifact
         if: needs.build.outputs.pkg-name == 'rlmagents'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: rlmagents-terminal-bench-score
           path: ${{ env.WORKING_DIR }}/.artifacts/terminal_bench_score.json
@@ -596,7 +596,7 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         with:
           name: dist
           path: ${{ env.WORKING_DIR }}/dist/
@@ -655,7 +655,7 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         with:
           name: dist
           path: ${{ env.WORKING_DIR }}/dist/

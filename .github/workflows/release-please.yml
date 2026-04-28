@@ -24,7 +24,7 @@ jobs:
       rlmagents-release: ${{ steps.check-releases.outputs.rlmagents-release }}
       pr: ${{ steps.release.outputs.pr }}
     steps:
-      - uses: googleapis/release-please-action@v4
+      - uses: googleapis/release-please-action@v5
         id: release
         with:
           config-file: release-please-config.json
